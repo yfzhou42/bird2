@@ -248,10 +248,42 @@ Eigen::VectorXd RigidBodyTemplate::computeDistances()
     return distances;
 }
 
+double tripleProduct(Vector3d a, Vector3d b, Vector3d c)
+{
+    return a.dot(b.cross(c));
+}
+
 double RigidBodyTemplate::distance(Vector3d p, int tet) const
 {
     // TODO: Compute distance from point to object boundary
-    return 0;
+    if (tet < 0)
+        return 0.0;
+    Vector4i tetraIndices = T.row(tet);
+    Vector3d a = V.row(tetraIndices[0]);
+    Vector3d b = V.row(tetraIndices[1]);
+    Vector3d c = V.row(tetraIndices[2]);
+    Vector3d d = V.row(tetraIndices[3]);
+    Vector3d vap = p - a;
+    Vector3d vbp = p - b;
+
+    Vector3d vab = b - a;
+    Vector3d vac = c - a;
+    Vector3d vad = d - a;
+
+    Vector3d vbc = c - b;
+    Vector3d vbd = d - b;
+
+    double va6 = tripleProduct(vbp, vbd, vbc);
+    double vb6 = tripleProduct(vap, vac, vad);
+    double vc6 = tripleProduct(vap, vad, vab);
+    double vd6 = tripleProduct(vap, vab, vac);
+    double v6 = 1.0 / tripleProduct(vab, vac, vad);
+    Vector4d weights(va6*v6, vb6*v6, vc6*v6, vd6*v6);
+    if(weights.minCoeff() < 0.0 || weights.maxCoeff() > 1.0){
+        return 0.0;
+	}
+
+	return distances_(tetraIndices[0])*weights[0] + distances_(tetraIndices[1])*weights[1] + distances_(tetraIndices[2])*weights[2] + distances_(tetraIndices[3])*weights[3];
 }
 
 Vector3d RigidBodyTemplate::Ddistance(int tet) const
