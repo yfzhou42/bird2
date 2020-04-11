@@ -33,4 +33,11 @@ build/
 tmp/
 logs/
 bin/
+third-party/
+.vs/
+.vscode/
 *.pyc
+
+errorOutput.txt
+errorOutputReference.txt
+CMakeSettings.json

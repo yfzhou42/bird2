@@ -253,16 +253,8 @@ double tripleProduct(Vector3d a, Vector3d b, Vector3d c)
     return a.dot(b.cross(c));
 }
 
-double RigidBodyTemplate::distance(Vector3d p, int tet) const
+Vector4d barycentricTet(Vector3d a, Vector3d b, Vector3d c, Vector3d d, Vector3d p)
 {
-    // TODO: Compute distance from point to object boundary
-    if (tet < 0)
-        return 0.0;
-    Vector4i tetraIndices = T.row(tet);
-    Vector3d a = V.row(tetraIndices[0]);
-    Vector3d b = V.row(tetraIndices[1]);
-    Vector3d c = V.row(tetraIndices[2]);
-    Vector3d d = V.row(tetraIndices[3]);
     Vector3d vap = p - a;
     Vector3d vbp = p - b;
 
@@ -278,18 +270,51 @@ double RigidBodyTemplate::distance(Vector3d p, int tet) const
     double vc6 = tripleProduct(vap, vad, vab);
     double vd6 = tripleProduct(vap, vab, vac);
     double v6 = 1.0 / tripleProduct(vab, vac, vad);
-    Vector4d weights(va6*v6, vb6*v6, vc6*v6, vd6*v6);
-    if(weights.minCoeff() < 0.0 || weights.maxCoeff() > 1.0){
-        return 0.0;
-	}
+    return Vector4d(va6*v6, vb6*v6, vc6*v6, vd6*v6);
+}
 
-	return distances_(tetraIndices[0])*weights[0] + distances_(tetraIndices[1])*weights[1] + distances_(tetraIndices[2])*weights[2] + distances_(tetraIndices[3])*weights[3];
+double RigidBodyTemplate::distance(Vector3d p, int tet) const
+{
+    // TODO: Compute distance from point to object boundary
+    if (tet == -1)
+        return p(1) + 1.0;
+    if (tet < -1)
+        return 0.0;
+    Vector4i tetraIndices = T.row(tet);
+    Vector3d a = V.row(tetraIndices[0]);
+    Vector3d b = V.row(tetraIndices[1]);
+    Vector3d c = V.row(tetraIndices[2]);
+    Vector3d d = V.row(tetraIndices[3]);
+
+    Vector4d weights = barycentricTet(a, b, c, d, p);
+    //std::cout << "distance to origin " << p.norm() << "distance to boundary " << 1.0 - p.norm()<< endl;
+
+    //std::cout << "DIST TORET: " << distances_(tetraIndices[0]) * weights[0] + distances_(tetraIndices[1]) * weights[1] + distances_(tetraIndices[2]) * weights[2] + distances_(tetraIndices[3]) * weights[3] << std::endl;
+    return (distances_(tetraIndices[0]) * weights[0] + distances_(tetraIndices[1]) * weights[1] + distances_(tetraIndices[2]) * weights[2] + distances_(tetraIndices[3]) * weights[3]);
 }
 
 Vector3d RigidBodyTemplate::Ddistance(int tet) const
 {
     // TODO: Compute derivative of distance from point to boundary
-    return Vector3d { 0, 0, 0 };
+    Vector4i tetraIndices = T.row(tet);
+    Vector3d a = V.row(tetraIndices[0]);
+    Vector3d b = V.row(tetraIndices[1]);
+    Vector3d c = V.row(tetraIndices[2]);
+    Vector3d d = V.row(tetraIndices[3]);
+    Matrix3d M;
+    M.row(0) = (a - d).transpose();
+    M.row(1) = (b - d).transpose();
+    M.row(2) = (c - d).transpose();
+    
+    //Matrix3d M((a - d).transpose(), (b - d).transpose(), (c - d).transpose());
+    double D0 = distances_(tetraIndices[0]);
+    double D1 = distances_(tetraIndices[1]);
+    double D2 = distances_(tetraIndices[2]);
+    double D3 = distances_(tetraIndices[3]);
+
+    Vector3d D(D0 - D3, D1 - D3, D2 - D3);
+
+    return D.transpose() * M.inverse();
 }
 
 }

@@ -243,6 +243,42 @@ void BirdsCore::computePenaltyCollisionForces(const std::set<Collision>& collisi
 	    return;
 
     // TODO compute and add penalty forces
+    for(Collision c : collisions){
+        double dist;
+        Vector3d derivDist;
+        Matrix3d rotB1 = VectorMath::rotationMatrix(bodies_[c.body1]->theta);
+        Matrix3d rotB2;
+
+        Vector3d vertHit = bodies_[c.body1]->getTemplate().getVerts().row(c.collidingVertex);
+
+        if(c.body2 == -1){
+            rotB2 = Matrix3d::Identity();
+            //Dist to floor in world coord
+            dist = (rotB1 * vertHit + bodies_[c.body1]->c)(1) + 1.0;
+            derivDist = Vector3d(0.0, 1.0, 0.0);
+        }
+        else {
+            rotB2 = VectorMath::rotationMatrix(bodies_[c.body2]->theta);
+            Vector3d phi = rotB2.transpose() * (rotB1 * vertHit + bodies_[c.body1]->c - bodies_[c.body2]->c); 
+
+            dist = bodies_[c.body2]->getTemplate().distance(phi, c.collidingTet);
+            derivDist = bodies_[c.body2]->getTemplate().Ddistance(c.collidingTet);
+        }
+
+        Vector3d term1 = params_->penaltyStiffness * dist * derivDist;
+        
+        if(c.body2 != -1)
+            Fc.segment<3>(c.body2 * 3) -= term1.transpose() * -rotB2.transpose();
+        Fc.segment<3>(c.body1 * 3) -= term1.transpose() * rotB2.transpose();
+        
+        if(c.body2 != -1)
+            Ftheta.segment<3>(c.body2 * 3) -= term1.transpose() * rotB2.transpose() * VectorMath::crossProductMatrix(rotB1 * vertHit + bodies_[c.body1]->c - bodies_[c.body2]->c)
+                * VectorMath::TMatrix(-bodies_[c.body2]->theta);
+        
+        Ftheta.segment<3>(c.body1 * 3) -= term1.transpose() * rotB2.transpose() * (-rotB1 * VectorMath::crossProductMatrix(vertHit)
+            * VectorMath::TMatrix(bodies_[c.body1]->theta));
+    
+    }
 }
 
 void BirdsCore::applyCollisionImpulses(const std::set<Collision>& collisions)
