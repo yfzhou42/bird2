@@ -290,7 +290,7 @@ double RigidBodyTemplate::distance(Vector3d p, int tet) const
     //std::cout << "distance to origin " << p.norm() << "distance to boundary " << 1.0 - p.norm()<< endl;
 
     //std::cout << "DIST TORET: " << distances_(tetraIndices[0]) * weights[0] + distances_(tetraIndices[1]) * weights[1] + distances_(tetraIndices[2]) * weights[2] + distances_(tetraIndices[3]) * weights[3] << std::endl;
-    return (distances_(tetraIndices[0]) * weights[0] + distances_(tetraIndices[1]) * weights[1] + distances_(tetraIndices[2]) * weights[2] + distances_(tetraIndices[3]) * weights[3]);
+    return -(distances_(tetraIndices[0]) * weights[0] + distances_(tetraIndices[1]) * weights[1] + distances_(tetraIndices[2]) * weights[2] + distances_(tetraIndices[3]) * weights[3]);
 }
 
 Vector3d RigidBodyTemplate::Ddistance(int tet) const
@@ -307,10 +307,10 @@ Vector3d RigidBodyTemplate::Ddistance(int tet) const
     M.row(2) = (c - d).transpose();
     
     //Matrix3d M((a - d).transpose(), (b - d).transpose(), (c - d).transpose());
-    double D0 = distances_(tetraIndices[0]);
-    double D1 = distances_(tetraIndices[1]);
-    double D2 = distances_(tetraIndices[2]);
-    double D3 = distances_(tetraIndices[3]);
+    double D0 = -distances_(tetraIndices[0]);
+    double D1 = -distances_(tetraIndices[1]);
+    double D2 = -distances_(tetraIndices[2]);
+    double D3 = -distances_(tetraIndices[3]);
 
     Vector3d D(D0 - D3, D1 - D3, D2 - D3);
 

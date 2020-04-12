@@ -7,6 +7,7 @@
 #include <iostream>
 #include <Eigen/LU> // Required for .inverse()
 #include <Eigen/Geometry> // Required for .cross()
+#include <utility>
 
 using namespace Eigen;
 
@@ -280,13 +281,47 @@ void BirdsCore::computePenaltyCollisionForces(const std::set<Collision>& collisi
     
     }
 }
-
 void BirdsCore::applyCollisionImpulses(const std::set<Collision>& collisions)
 {
     if (!params_->impulsesEnabled)
         return;
 
     // TODO apply collision impulses
+    // Map of only the largest impules per pair.
+    std::map<std::set<int>, std::pair<double,Collision>> toApply;
+    for(Collision c : collisions){
+        if(c.body2 == -1) continue;
+        Matrix3d rotB1 = VectorMath::rotationMatrix(bodies_[c.body1]->theta);
+        Matrix3d rotB2 = VectorMath::rotationMatrix(bodies_[c.body2]->theta);
+        Vector3d vertHit = bodies_[c.body1]->getTemplate().getVerts().row(c.collidingVertex);
+        Vector3d phi = rotB2.transpose() * (rotB1 * vertHit + bodies_[c.body1]->c - bodies_[c.body2]->c); 
+        Vector3d c1 = bodies_[c.body1]->c;
+        Vector3d c2 = bodies_[c.body2]->c;
+
+        Vector3d derivDist = bodies_[c.body2]->getTemplate().Ddistance(c.collidingTet);
+        Vector3d dPhi = rotB2.transpose()* VectorMath::crossProductMatrix(rotB1 * vertHit + c1 - c2) * VectorMath::TMatrix(-bodies_[c.body2]->theta) * (bodies_[c.body2]->w)
+                + rotB2.transpose() * ((-rotB1)* VectorMath::crossProductMatrix(vertHit)*VectorMath::TMatrix(bodies_[c.body1]->theta)*(bodies_[c.body1]->w) 
+                + (bodies_[c.body1]->cvel) - (bodies_[c.body2]->cvel));
+
+        double relativeVel =  derivDist.transpose() * dPhi;
+        if(relativeVel > 0) continue;
+        double dist = bodies_[c.body2]->getTemplate().distance(phi, c.collidingTet);
+        std::set<int> collisionSet;
+        collisionSet.insert(c.body2);
+        collisionSet.insert(c.body1);
+        try {
+            std::pair<double, Collision> toComp = toApply[collisionSet];
+            if(toComp.first > dist){
+                toApply[collisionSet] = std::make_pair(dist, c);
+            }
+        }
+        catch(const std::out_of_range& e){
+            toApply[collisionSet] = std::make_pair(dist, c);
+        }
+    }
+    // for(std::map<std::set<int>, std::pair<double,Collision>>::iterator it = toApply.begin(); it != toApply.end(); it++){
+    //     std::cout << "Bodies: " << *it->first.begin() << " " << *(++it->first.begin()) << " " << "Signed Dist: " << it->second.first << std::endl;
+    // }
 }
 
 }
