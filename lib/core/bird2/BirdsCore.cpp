@@ -154,7 +154,8 @@ bool BirdsCore::simulateOneStep()
         {
             Vector3d term1 = (-VectorMath::TMatrix(-params_->timeStep*newwguess).inverse() * VectorMath::TMatrix(oldthetas[bodyidx])).transpose() * Mi * body.density * newwguess;
             Vector3d term2 = (VectorMath::TMatrix(params_->timeStep*body.w).inverse()*VectorMath::TMatrix(oldthetas[bodyidx])).transpose() * Mi * body.density * body.w;
-            Vector3d fval = term1 + term2;
+            Vector3d term3 = params_->timeStep * thetaForce.segment<3>(3*bodyidx);
+            Vector3d fval = term1 + term2 + term3;
             if(fval.norm() / body.density / Mi.trace() <= params_->NewtonTolerance)
                 break;
 
@@ -318,6 +319,7 @@ void BirdsCore::applyCollisionImpulses(const std::set<Collision>& collisions)
         catch(const std::out_of_range& e){
             toApply[collisionSet] = std::make_pair(dist, c);
         }
+
     }
     // for(std::map<std::set<int>, std::pair<double,Collision>>::iterator it = toApply.begin(); it != toApply.end(); it++){
     //     std::cout << "Bodies: " << *it->first.begin() << " " << *(++it->first.begin()) << " " << "Signed Dist: " << it->second.first << std::endl;
