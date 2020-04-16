@@ -320,6 +320,7 @@ void BirdsCore::applyCollisionImpulses(const std::set<Collision>& collisions)
         double relativeVel =  derivDist.transpose() * dPhi;
         if(relativeVel > 0) continue;
         double dist = bodies_[c.body2]->getTemplate().distance(phi, c.collidingTet);
+        if(dist != dist || dist >= 0.0) continue;
         std::set<int> collisionSet;
         collisionSet.insert(c.body2);
         collisionSet.insert(c.body1);
@@ -336,7 +337,6 @@ void BirdsCore::applyCollisionImpulses(const std::set<Collision>& collisions)
 
     //Apply Impulses
     for(std::map<std::set<int>, struct CollisionMeta>::iterator it = toApply.begin(); it != toApply.end(); it++){
-        std::cout << "Bodies: " << *it->first.begin() << " " << *(++(it->first.begin())) << " " << "Signed Dist: " << it->second.dist << std::endl;
         CollisionMeta cMeta = it->second;
         Collision c = cMeta.c;
         Matrix3d Minv1 = Matrix3d::Identity() / (bodies_[c.body1]->density* bodies_[c.body1]->getTemplate().getVolume());
@@ -357,8 +357,8 @@ void BirdsCore::applyCollisionImpulses(const std::set<Collision>& collisions)
         //dg calcs
         Vector3d dgThetaI = cMeta.derivDist.transpose() * A;
         Vector3d dgThetaJ = cMeta.derivDist.transpose() * B;
-        Vector3d dgCI = cMeta.derivDist.transpose() * -cMeta.rotB2.transpose();
-        Vector3d dgCJ = cMeta.derivDist.transpose() * cMeta.rotB2.transpose();
+        Vector3d dgCI = cMeta.derivDist.transpose() * C;
+        Vector3d dgCJ = cMeta.derivDist.transpose() * D;
 
         Matrix3d IInertiaInverse = bodies_[c.body2]->getTemplate().getInertiaTensor().inverse();
         Matrix3d JInertiaInverse = bodies_[c.body1]->getTemplate().getInertiaTensor().inverse();
@@ -370,10 +370,13 @@ void BirdsCore::applyCollisionImpulses(const std::set<Collision>& collisions)
                     + D * Minv1 * dgCJ + C * Minv2 * dgCI));
 
         bodies_[c.body2]->cvel += Minv2 * (alpha * dgCI);
-        bodies_[c.body2]->w += ((alpha * dgThetaI.transpose()) * VectorMath::TMatrix(bodies_[c.body2]->theta).inverse() * IInertiaInverse).transpose();
+        bodies_[c.body2]->w = (bodies_[c.body2]->w.transpose() + (alpha * dgThetaI.transpose()) * VectorMath::TMatrix(bodies_[c.body2]->theta).inverse() * IInertiaInverse).transpose();
     
         bodies_[c.body1]->cvel += Minv1 * (alpha * dgCJ);
         bodies_[c.body1]->w += ((alpha * dgThetaJ.transpose()) * VectorMath::TMatrix(bodies_[c.body1]->theta).inverse() * JInertiaInverse).transpose();
+
+        std::cout << "Bodies: " << *it->first.begin() << " " << *(++(it->first.begin())) << " " << "Signed Dist: " << it->second.dist << std::endl;
+
     }
     std::cout << std::endl;
 }
