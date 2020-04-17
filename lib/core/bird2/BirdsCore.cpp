@@ -284,7 +284,10 @@ void BirdsCore::computePenaltyCollisionForces(const std::set<Collision>& collisi
 }
 
 typedef struct CollisionMeta{
-    Collision c;
+    int body1;
+    int body2;
+    int collidingVertex;
+    int collidingTet;
     double dist;
     Vector3d derivDist;
     double relativeVel;
@@ -292,7 +295,12 @@ typedef struct CollisionMeta{
     Matrix3d rotB2;
     CollisionMeta(){}
     CollisionMeta(Collision c, double dist, Vector3d derivDist, double relativeVel, Matrix3d rotB1, Matrix3d rotB2) : 
-                c(c), dist(dist), derivDist(derivDist), relativeVel(relativeVel), rotB1(rotB1), rotB2(rotB2) {}
+                dist(dist), derivDist(derivDist), relativeVel(relativeVel), rotB1(rotB1), rotB2(rotB2) {
+                    this->body1 = c.body1;
+                    this->body2 = c.body2;
+                    this->collidingTet = c.collidingTet;
+                    this->collidingVertex = c.collidingVertex;
+                }
 } CollisionMeta;
 
 void BirdsCore::applyCollisionImpulses(const std::set<Collision>& collisions)
@@ -320,7 +328,7 @@ void BirdsCore::applyCollisionImpulses(const std::set<Collision>& collisions)
         double relativeVel =  derivDist.transpose() * dPhi;
         if(relativeVel > 0) continue;
         double dist = bodies_[c.body2]->getTemplate().distance(phi, c.collidingTet);
-        if(dist != dist || dist >= 0.0) continue;
+        if(std::isnan(dist) || dist >= 0.0) continue;
         std::set<int> collisionSet;
         collisionSet.insert(c.body2);
         collisionSet.insert(c.body1);
@@ -337,35 +345,36 @@ void BirdsCore::applyCollisionImpulses(const std::set<Collision>& collisions)
 
     //Apply Impulses
     for(std::map<std::set<int>, struct CollisionMeta>::iterator it = toApply.begin(); it != toApply.end(); it++){
-        CollisionMeta cMeta = it->second;
-        Collision c = cMeta.c;
+        CollisionMeta c = it->second;
+        std::cout << "Bodies: " << *it->first.begin() << " " << *(++(it->first.begin())) << " " << "Signed Dist: " << it->second.dist << std::endl;
+        std::cout << "Coll B: " << c.body1 << " " << c.body2 << " " << "Signed Dist: " << c.dist << std::endl;
         Matrix3d Minv1 = Matrix3d::Identity() / (bodies_[c.body1]->density* bodies_[c.body1]->getTemplate().getVolume());
         Matrix3d Minv2 = Matrix3d::Identity() / (bodies_[c.body2]->density* bodies_[c.body2]->getTemplate().getVolume());
         Vector3d vertHit = bodies_[c.body1]->getTemplate().getVerts().row(c.collidingVertex);
         Vector3d c1 = bodies_[c.body1]->c;
         Vector3d c2 = bodies_[c.body2]->c;
 
-        Matrix3d A = cMeta.rotB2.transpose() * VectorMath::crossProductMatrix(cMeta.rotB1 * vertHit + c1 - c2) * VectorMath::TMatrix(-bodies_[c.body2]->theta);
-        Matrix3d B = cMeta.rotB2.transpose() * (-cMeta.rotB1 * VectorMath::crossProductMatrix(vertHit) * VectorMath::TMatrix(bodies_[c.body1]->theta));
-        Matrix3d C = -cMeta.rotB2.transpose();
-        Matrix3d D = cMeta.rotB2.transpose();
+        Matrix3d A = c.rotB2.transpose() * VectorMath::crossProductMatrix(c.rotB1 * vertHit + c1 - c2) * VectorMath::TMatrix(-bodies_[c.body2]->theta);
+        Matrix3d B = c.rotB2.transpose() * (-c.rotB1 * VectorMath::crossProductMatrix(vertHit) * VectorMath::TMatrix(bodies_[c.body1]->theta));
+        Matrix3d C = -c.rotB2.transpose();
+        Matrix3d D = c.rotB2.transpose();
         Vector3d dPhi = A * (bodies_[c.body2]->w) + B * bodies_[c.body1]->w + D * bodies_[c.body1]->cvel + C * bodies_[c.body2]->cvel;
 
-        double relativeVel = cMeta.derivDist.transpose() * dPhi;
+        double relativeVel = c.derivDist.transpose() * dPhi;
         if(relativeVel > 0) continue;
 
         //dg calcs
-        Vector3d dgThetaI = cMeta.derivDist.transpose() * A;
-        Vector3d dgThetaJ = cMeta.derivDist.transpose() * B;
-        Vector3d dgCI = cMeta.derivDist.transpose() * C;
-        Vector3d dgCJ = cMeta.derivDist.transpose() * D;
+        Vector3d dgThetaI = c.derivDist.transpose() * A;
+        Vector3d dgThetaJ = c.derivDist.transpose() * B;
+        Vector3d dgCI = c.derivDist.transpose() * C;
+        Vector3d dgCJ = c.derivDist.transpose() * D;
 
         Matrix3d IInertiaInverse = bodies_[c.body2]->getTemplate().getInertiaTensor().inverse();
         Matrix3d JInertiaInverse = bodies_[c.body1]->getTemplate().getInertiaTensor().inverse();
 
         double alpha = -(1.0 + params_->CoR) * relativeVel;
 
-        alpha /= (cMeta.derivDist.transpose() * (A * (dgThetaI.transpose() * VectorMath::TMatrix(bodies_[c.body2]->theta).inverse() * IInertiaInverse).transpose()
+        alpha /= (c.derivDist.transpose() * (A * (dgThetaI.transpose() * VectorMath::TMatrix(bodies_[c.body2]->theta).inverse() * IInertiaInverse).transpose()
                     + B * (dgThetaJ.transpose() * VectorMath::TMatrix(bodies_[c.body1]->theta).inverse() * JInertiaInverse).transpose()
                     + D * Minv1 * dgCJ + C * Minv2 * dgCI));
 
@@ -375,7 +384,7 @@ void BirdsCore::applyCollisionImpulses(const std::set<Collision>& collisions)
         bodies_[c.body1]->cvel += Minv1 * (alpha * dgCJ);
         bodies_[c.body1]->w += ((alpha * dgThetaJ.transpose()) * VectorMath::TMatrix(bodies_[c.body1]->theta).inverse() * JInertiaInverse).transpose();
 
-        std::cout << "Bodies: " << *it->first.begin() << " " << *(++(it->first.begin())) << " " << "Signed Dist: " << it->second.dist << std::endl;
+        
 
     }
     std::cout << std::endl;
