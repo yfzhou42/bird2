@@ -312,23 +312,38 @@ void BirdsCore::applyCollisionImpulses(const std::set<Collision>& collisions)
     // Map of only the largest impules per pair.
     std::map<std::set<int>, CollisionMeta*> toApply;
     for(Collision c : collisions){
-        if(c.body2 == -1) continue;
         Matrix3d rotB1 = VectorMath::rotationMatrix(bodies_[c.body1]->theta);
-        Matrix3d rotB2 = VectorMath::rotationMatrix(bodies_[c.body2]->theta);
+        Matrix3d rotB2 = Matrix3d::Identity();
         Vector3d vertHit = bodies_[c.body1]->getTemplate().getVerts().row(c.collidingVertex);
-        Vector3d phi = rotB2.transpose() * (rotB1 * vertHit + bodies_[c.body1]->c - bodies_[c.body2]->c); 
         Vector3d c1 = bodies_[c.body1]->c;
-        Vector3d c2 = bodies_[c.body2]->c;
+        Vector3d c2 = Vector3d(0.0,-1.0,0.0);
+        Vector3d w1 = bodies_[c.body1]->w;
+        Vector3d w2 = Vector3d::Zero();
+        Vector3d cVel1 = bodies_[c.body1]->cvel;
+        Vector3d cVel2 = Vector3d::Zero();
 
-        Vector3d derivDist = bodies_[c.body2]->getTemplate().Ddistance(c.collidingTet);
+        
+        Vector3d derivDist = Vector3d(0.0, 1.0, 0.0);
 
-        Vector3d dPhi = VectorMath::crossProductMatrix(bodies_[c.body2]->w).transpose() * rotB2.transpose() * (rotB1 * vertHit + c1 - c2)
-                + rotB2.transpose() * (rotB1 * VectorMath::crossProductMatrix(bodies_[c.body1]->w) * vertHit 
-                + (bodies_[c.body1]->cvel) - (bodies_[c.body2]->cvel));
+        if(c.body2 != -1){
+            derivDist = bodies_[c.body2]->getTemplate().Ddistance(c.collidingTet);
+            rotB2 = VectorMath::rotationMatrix(bodies_[c.body2]->theta);
+            c2 = bodies_[c.body2]->c;
+            cVel2 = bodies_[c.body2]->cvel;
+            w2 = bodies_[c.body2]->w;
+        }
+
+        Vector3d phi = rotB2.transpose() * (rotB1 * vertHit + c1 - c2); 
+
+        Vector3d dPhi = VectorMath::crossProductMatrix(w2).transpose() * rotB2.transpose() * (rotB1 * vertHit + c1 - c2)
+                + rotB2.transpose() * (rotB1 * VectorMath::crossProductMatrix(w1) * vertHit 
+                + (cVel1) - (cVel2));
 
         double relativeVel =  derivDist.transpose() * dPhi;
+
         if(relativeVel > 0) continue;
-        double dist = bodies_[c.body2]->getTemplate().distance(phi, c.collidingTet);
+        double dist = (rotB1 * vertHit + c1)(1) + 1.0;
+        if(c.body2 != -1) dist = bodies_[c.body2]->getTemplate().distance(phi, c.collidingTet);
         if(std::isnan(dist) || dist >= 0.0) continue;
         std::set<int> collisionSet;
         collisionSet.insert(c.body2);
@@ -350,20 +365,36 @@ void BirdsCore::applyCollisionImpulses(const std::set<Collision>& collisions)
     //Apply Impulses
     for(std::map<std::set<int>, CollisionMeta*>::iterator it = toApply.begin(); it != toApply.end(); it++){
         CollisionMeta c = *it->second;
-        //std::cout << "Bodies: " << *it->first.begin() << " " << *(++(it->first.begin())) << " " << "Signed Dist: " << it->second->dist << std::endl;
-        //std::cout << "Coll B: " << c.body1 << " " << c.body2 << " " << "Signed Dist: " << c.dist << std::endl;
         Matrix3d Minv1 = Matrix3d::Identity() / (bodies_[c.body1]->density* bodies_[c.body1]->getTemplate().getVolume());
-        Matrix3d Minv2 = Matrix3d::Identity() / (bodies_[c.body2]->density* bodies_[c.body2]->getTemplate().getVolume());
+        Matrix3d Minv2 = Matrix3d::Zero();
         Vector3d vertHit = bodies_[c.body1]->getTemplate().getVerts().row(c.collidingVertex);
         Vector3d c1 = bodies_[c.body1]->c;
-        Vector3d c2 = bodies_[c.body2]->c;
+        Vector3d c2 = Vector3d(0.0,-1.0,0.0);
+        Vector3d w1 = bodies_[c.body1]->w;
+        Vector3d w2 = Vector3d::Zero();
+        Vector3d cVel1 = bodies_[c.body1]->cvel;
+        Vector3d cVel2 = Vector3d::Zero();
+        Vector3d theta1 = bodies_[c.body1]->theta;
+        Vector3d theta2 = Vector3d::Zero();
 
-        Vector3d dPhi = VectorMath::crossProductMatrix(bodies_[c.body2]->w).transpose() * c.rotB2.transpose() * (c.rotB1 * vertHit + c1 - c2)
+        Matrix3d IInertiaInverse = Matrix3d::Zero();
+        Matrix3d JInertiaInverse = bodies_[c.body1]->getTemplate().getInertiaTensor().inverse();
+
+        if(c.body2 != -1){
+            Minv2 = Matrix3d::Identity() / (bodies_[c.body2]->density* bodies_[c.body2]->getTemplate().getVolume());
+            c2 = bodies_[c.body2]->c;
+            w2 = bodies_[c.body2]->w;
+            cVel2 = bodies_[c.body2]->cvel;
+            theta2 = bodies_[c.body2]->theta;
+            IInertiaInverse = bodies_[c.body2]->getTemplate().getInertiaTensor().inverse();
+        }
+
+        Vector3d dPhi = VectorMath::crossProductMatrix(w2).transpose() * c.rotB2.transpose() * (c.rotB1 * vertHit + c1 - c2)
                 + c.rotB2.transpose() * (c.rotB1 * VectorMath::crossProductMatrix(bodies_[c.body1]->w) * vertHit 
-                + (bodies_[c.body1]->cvel) - (bodies_[c.body2]->cvel));
+                + (cVel1) - (cVel2));
 
-        Matrix3d A = c.rotB2.transpose() * VectorMath::crossProductMatrix(c.rotB1 * vertHit + c1 - c2) * VectorMath::TMatrix(-bodies_[c.body2]->theta);
-        Matrix3d B = c.rotB2.transpose() * (-c.rotB1 * VectorMath::crossProductMatrix(vertHit) * VectorMath::TMatrix(bodies_[c.body1]->theta));
+        Matrix3d A = c.rotB2.transpose() * VectorMath::crossProductMatrix(c.rotB1 * vertHit + c1 - c2) * VectorMath::TMatrix(-theta2);
+        Matrix3d B = c.rotB2.transpose() * (-c.rotB1 * VectorMath::crossProductMatrix(vertHit) * VectorMath::TMatrix(theta1));
         Matrix3d C = -c.rotB2.transpose();
         Matrix3d D = c.rotB2.transpose();
 
@@ -376,20 +407,18 @@ void BirdsCore::applyCollisionImpulses(const std::set<Collision>& collisions)
         Vector3d dgCI = c.derivDist.transpose() * C;
         Vector3d dgCJ = c.derivDist.transpose() * D;
 
-        Matrix3d IInertiaInverse = bodies_[c.body2]->getTemplate().getInertiaTensor().inverse();
-        Matrix3d JInertiaInverse = bodies_[c.body1]->getTemplate().getInertiaTensor().inverse();
-
         double alpha = -(1.0 + params_->CoR) * relativeVel;
 
-        alpha /= c.derivDist.transpose() * (VectorMath::crossProductMatrix(c.rotB1 * vertHit + c1 - c2) * (dgThetaI.transpose() * VectorMath::TMatrix(bodies_[c.body2]->theta).inverse() * IInertiaInverse).transpose()
-                    + c.rotB2.transpose() * c.rotB1 * VectorMath::crossProductMatrix((dgThetaJ.transpose() * VectorMath::TMatrix(bodies_[c.body1]->theta).inverse() * JInertiaInverse).transpose()) * vertHit
+        alpha /= c.derivDist.transpose() * (VectorMath::crossProductMatrix(c.rotB1 * vertHit + c1 - c2) * (dgThetaI.transpose() * VectorMath::TMatrix(theta2).inverse() * IInertiaInverse).transpose()
+                    + c.rotB2.transpose() * c.rotB1 * VectorMath::crossProductMatrix((dgThetaJ.transpose() * VectorMath::TMatrix(theta1).inverse() * JInertiaInverse).transpose()) * vertHit
                     + Minv1 * dgCJ - Minv2 * dgCI);
 
-        bodies_[c.body2]->cvel += Minv2 * (alpha * dgCI);
-        bodies_[c.body2]->w = (bodies_[c.body2]->w.transpose() + (alpha * dgThetaI.transpose()) * VectorMath::TMatrix(bodies_[c.body2]->theta).inverse() * IInertiaInverse).transpose();
-    
+        if(c.body2 != -1) {
+            bodies_[c.body2]->cvel += Minv2 * (alpha * dgCI);
+            bodies_[c.body2]->w = (bodies_[c.body2]->w.transpose() + (alpha * dgThetaI.transpose()) * VectorMath::TMatrix(theta2).inverse() * IInertiaInverse).transpose();
+        }
         bodies_[c.body1]->cvel += Minv1 * (alpha * dgCJ);
-        bodies_[c.body1]->w += ((alpha * dgThetaJ.transpose()) * VectorMath::TMatrix(bodies_[c.body1]->theta).inverse() * JInertiaInverse).transpose();
+        bodies_[c.body1]->w += ((alpha * dgThetaJ.transpose()) * VectorMath::TMatrix(theta1).inverse() * JInertiaInverse).transpose();
 
         free(it->second);
     }
