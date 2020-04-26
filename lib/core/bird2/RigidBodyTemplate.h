@@ -5,6 +5,7 @@
 #include <Eigen/Core>
 #include <set>
 #include <vector>
+#include "Voronoi.h"
 
 namespace bird2 {
 
@@ -42,7 +43,8 @@ private:
     Eigen::Vector3d computeCenterOfMass();
     Eigen::Matrix3d computeInertiaTensor();
     Eigen::VectorXd computeDistances();
-    
+    void generateVoronoiPoints();
+
     Eigen::MatrixX3d V;
     Eigen::MatrixX3i F;
     Eigen::MatrixX4i T;
@@ -52,6 +54,8 @@ private:
     double volume_;
     Eigen::Vector3d com_;  // Only used once, but kept for testing
     Eigen::Matrix3d inertiaTensor_;    
+
+    std::vector<VoronoiPoint> voronois;
 };
 
 }

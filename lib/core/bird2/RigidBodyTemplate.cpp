@@ -7,6 +7,10 @@
 #include <igl/readOBJ.h>
 #include <iostream>
 #include <map>
+#include <stdlib.h>
+#include <time.h>
+
+#define VORONOI_POINTS 10
 
 namespace bird2 {
 
@@ -17,6 +21,7 @@ RigidBodyTemplate::RigidBodyTemplate(Eigen::Ref<Eigen::MatrixX3d> V,
                                      Eigen::Ref<Eigen::MatrixX3i> F,
                                      double scale) : volume_(0)
 {
+    srand(time(NULL));
     inertiaTensor_.setZero();
     Eigen::MatrixXd mV = V * scale;
     Eigen::MatrixXi mF = F;
@@ -24,6 +29,7 @@ RigidBodyTemplate::RigidBodyTemplate(Eigen::Ref<Eigen::MatrixX3d> V,
     igl::copyleft::tetgen::tetrahedralize(mV, mF, "pq1.414a0.01", this->V, this->T, this->F);
     computeFaces();
     initialize();
+    generateVoronoiPoints();
 }
 
 RigidBodyTemplate::RigidBodyTemplate(const Eigen::MatrixX3d& verts, const Eigen::MatrixX4i& tets)
@@ -33,6 +39,48 @@ RigidBodyTemplate::RigidBodyTemplate(const Eigen::MatrixX3d& verts, const Eigen:
     T = tets;
     computeFaces();
     initialize();
+    generateVoronoiPoints();
+}
+
+Vector3d getTetCenter(const MatrixX3d& V, const MatrixX4i& T, int tet){
+    return (V.row(T.row(tet)(0)) + V.row(T.row(tet)(1)) + V.row(T.row(tet)(2)) + V.row(T.row(tet)(3)))/4.0;
+}
+
+void RigidBodyTemplate::generateVoronoiPoints(){
+    vector<Eigen::Vector3d> voronoiCenters;
+    set<int> includedTets;
+    for (int i = 0; i < VORONOI_POINTS; i++) {
+        int tet = rand() % T.rows();
+        if(includedTets.find(tet) != includedTets.end()) continue;
+        voronoiCenters.push_back(getTetCenter(V, T, tet));
+    }
+
+    vector<vector<Vector4i>> voronoiTets;
+    voronoiTets.resize(voronoiCenters.size());
+    for (int i = 0; i < T.rows(); i++) {
+        double minDist = 100000.0;
+        int minIndex = -1;
+        Vector3d tetCenter = getTetCenter(V, T, i);
+        for(int j = 0; j < voronoiCenters.size(); j++){
+            double curDist = (tetCenter-voronoiCenters[j]).squaredNorm();
+            if ((tetCenter-voronoiCenters[j]).squaredNorm() < minDist){
+                minDist = curDist;
+                minIndex = j;
+            }
+        }
+        if(minIndex == -1) std::cout << "THIS SHOULD NEVER EVER HAPPEN" << std::endl;
+        voronoiTets[minIndex].push_back(T.row(i));
+    }
+
+    for(int i = 0; i< voronoiCenters.size(); i++){
+        MatrixX4i tetMatrix;
+        tetMatrix.resize(voronoiTets[i].size(), 4);
+        for(int j = 0; j < voronoiTets[i].size(); j++){
+            tetMatrix.row(j) = voronoiTets[i][j];
+        }
+        voronois.push_back(VoronoiPoint(voronoiCenters[i], tetMatrix));
+        //std::cout << "Voronoi " << i << " Tet Count: " << voronois[i].T.rows() << std::endl;
+    }
 }
 
 RigidBodyTemplate::~RigidBodyTemplate()
