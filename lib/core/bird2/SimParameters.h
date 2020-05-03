@@ -17,6 +17,8 @@ struct SimParameters
         penaltyStiffness = 1.0;
         impulsesEnabled = true;
         CoR = 0.5;
+        maxStrain = 1.0;
+        springStiffness = 0.5;
     }
 
     float timeStep;
@@ -29,6 +31,8 @@ struct SimParameters
     float penaltyStiffness;
     bool impulsesEnabled;
     float CoR;
+    float maxStrain;
+    float springStiffness;
 };
 
 }

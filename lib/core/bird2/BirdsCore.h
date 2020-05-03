@@ -81,6 +81,9 @@ public:
 private:
     int32_t rigid_body_id_;
     void computeForces(Eigen::VectorXd& Fc, Eigen::VectorXd& Ftheta);
+    void shatter(int bodyIndex, std::set<int> brokenVoronoi);
+    std::set<int> toShatter(int index);
+    void breakVoronois();
 
     double time_;
     std::shared_ptr<SimParameters> params_;

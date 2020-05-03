@@ -257,6 +257,7 @@ collisionDetection(std::vector<std::shared_ptr<RigidBodyInstance>>& instances)
     std::set<Collision> collisions;
     
     int nbodies = (int)instances.size();
+    //cout << "number of bodies \n" << nbodies << endl;
     for (int i = 0; i < nbodies; i++) {
         refitAABB(instances[i].get(), instances[i]->AABB);
     }
@@ -266,6 +267,7 @@ collisionDetection(std::vector<std::shared_ptr<RigidBodyInstance>>& instances)
             intersect(instances[i]->AABB, instances[j]->AABB, i, j, instances, collisions);
         }
     }
+    //cout << "Collision # " << collisions.size() << endl;
 
     // floor
 

@@ -6,6 +6,7 @@
 #include <set>
 #include <vector>
 #include "Voronoi.h"
+#include "Spring.h"
 
 namespace bird2 {
 
@@ -32,6 +33,11 @@ public:
     double distance(Eigen::Vector3d p, int tet) const;
     Eigen::Vector3d Ddistance(int tet) const;
 
+    std::vector<VoronoiPoint> voronois;
+    std::vector<Spring> springs;
+    
+    int lookupVoronoiFromTet(int tet) const { return tetToVoronoi[tet]; }
+    int lookupVoronoiFromVert(int vert) const { return vertToVoronoi[vert]; }
 private:
     RigidBodyTemplate(const RigidBodyTemplate &other) = delete;
     RigidBodyTemplate &operator=(const RigidBodyTemplate &other) = delete;
@@ -44,6 +50,8 @@ private:
     Eigen::Matrix3d computeInertiaTensor();
     Eigen::VectorXd computeDistances();
     void generateVoronoiPoints();
+    void generateSprings();
+    void generateVoronoiReferences();
 
     Eigen::MatrixX3d V;
     Eigen::MatrixX3i F;
@@ -51,11 +59,16 @@ private:
 
     Eigen::VectorXd distances_;
     
+    //mapping the tetrahedrons to the index of the voronois point in the voronois list
+    std::vector<int> tetToVoronoi;
+    //mapping the vertices to the index of the voronois point in the voronois list
+    std::vector<int> vertToVoronoi;
+
+    
     double volume_;
     Eigen::Vector3d com_;  // Only used once, but kept for testing
     Eigen::Matrix3d inertiaTensor_;    
 
-    std::vector<VoronoiPoint> voronois;
 };
 
 }

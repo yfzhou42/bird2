@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define VORONOI_POINTS 10
+#define VORONOI_POINTS 3
 
 namespace bird2 {
 
@@ -26,10 +26,14 @@ RigidBodyTemplate::RigidBodyTemplate(Eigen::Ref<Eigen::MatrixX3d> V,
     Eigen::MatrixXd mV = V * scale;
     Eigen::MatrixXi mF = F;
 
-    igl::copyleft::tetgen::tetrahedralize(mV, mF, "pq1.414a0.01", this->V, this->T, this->F);
+    igl::copyleft::tetgen::tetrahedralize(mV, mF, "Qpq1.414a0.01", this->V, this->T, this->F);
     computeFaces();
     initialize();
     generateVoronoiPoints();
+    std::cout << "Springs Count: " << springs.size() << std::endl;
+    for (Spring s : springs) {
+        std::cout << "Vor Connection: " << s.p1 << "," << s.p2 << std::endl;
+    }
 }
 
 RigidBodyTemplate::RigidBodyTemplate(const Eigen::MatrixX3d& verts, const Eigen::MatrixX4i& tets)
@@ -37,6 +41,10 @@ RigidBodyTemplate::RigidBodyTemplate(const Eigen::MatrixX3d& verts, const Eigen:
 {
     V = verts;
     T = tets;
+    computeFaces();    
+    Eigen::MatrixXd mV = V;
+    Eigen::MatrixXi mF = F;
+    igl::copyleft::tetgen::tetrahedralize(V, mF, "Qpq1.414a0.01", this->V, this->T, this->F);
     computeFaces();
     initialize();
     generateVoronoiPoints();
@@ -53,7 +61,10 @@ void RigidBodyTemplate::generateVoronoiPoints(){
         int tet = rand() % T.rows();
         if(includedTets.find(tet) != includedTets.end()) continue;
         voronoiCenters.push_back(getTetCenter(V, T, tet));
+        includedTets.insert(tet);
     }
+    
+    tetToVoronoi.resize(T.rows());
 
     vector<vector<Vector4i>> voronoiTets;
     voronoiTets.resize(voronoiCenters.size());
@@ -70,6 +81,8 @@ void RigidBodyTemplate::generateVoronoiPoints(){
         }
         if(minIndex == -1) std::cout << "THIS SHOULD NEVER EVER HAPPEN" << std::endl;
         voronoiTets[minIndex].push_back(T.row(i));
+        //Save the voronoi->tet reference for lookup later.
+        tetToVoronoi[i] = minIndex;
     }
 
     for(int i = 0; i< voronoiCenters.size(); i++){
@@ -80,6 +93,72 @@ void RigidBodyTemplate::generateVoronoiPoints(){
         }
         voronois.push_back(VoronoiPoint(voronoiCenters[i], tetMatrix));
         //std::cout << "Voronoi " << i << " Tet Count: " << voronois[i].T.rows() << std::endl;
+    }
+    generateSprings();
+    generateVoronoiReferences();
+}
+
+void RigidBodyTemplate::generateVoronoiReferences(){
+    vertToVoronoi.resize(V.rows());
+    for (int i = 0; i < voronois.size(); i++) {
+        for (int j = 0; j < voronois[i].T.rows(); j++) {
+            for (int k = 0; k < 4; k++) {
+                vertToVoronoi[voronois[i].T.row(j)[k]] = i;
+            }
+        }
+    }
+    
+}
+
+void makeFaces(Vector4i tet, set<set<int>>& faces) {
+    set<int> face1;
+    face1.insert({tet[0], tet[1], tet[2]});
+    faces.insert(face1);
+    set<int> face2;
+    face2.insert({tet[1], tet[2], tet[3]});
+    faces.insert(face2);
+    set<int> face3;
+    face3.insert({tet[0], tet[1], tet[3]});
+    faces.insert(face3);
+    set<int> face4;
+    face4.insert({tet[0], tet[2], tet[3]});
+    faces.insert(face4);
+}
+
+void RigidBodyTemplate::generateSprings() {
+    /*
+    for all v in voronoi
+        for all v2 voronoi from v + 1
+            if v and v2 share 3 vertices in a tet
+                add a spring from v to v2
+    */
+    for (int i = 0; i < voronois.size(); i ++) {
+        MatrixX4i T1 = voronois[i].T;
+        //Set of all faces from tet
+        set<set<int>> tetSet1;
+        for (int t1 = 0; t1 < T1.size(); t1++) {
+            //for each tet which contains 4 faces
+            set<set<int>> faces;
+            makeFaces(T1.row(t1), faces);
+            tetSet1.insert(faces.begin(), faces.end());
+        }
+        for (int j = i + 1; j < voronois.size(); j++) {
+            MatrixX4i T2 = voronois[i].T;
+            bool connected = false;
+            for (int t2 = 0; t2 < T2.size() && !connected; t2++) {
+                set<set<int>> faces;
+                makeFaces(T2.row(t2), faces);
+                for(set<int> f : faces){
+                    if(tetSet1.find(f) != tetSet1.end()) {
+                        springs.push_back(Spring(i, j));
+                        voronois[i].springs.push_back(&springs.back());
+                        voronois[j].springs.push_back(&springs.back());
+                        connected = true;
+                        break;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -95,9 +174,9 @@ void RigidBodyTemplate::initialize()
         V.row(i) -= com_;
     inertiaTensor_ = computeInertiaTensor();
 
-    std::cerr << "computeDistances, F rows: " << F.rows() << std::endl;
+    //std::cerr << "computeDistances, F rows: " << F.rows() << std::endl;
     distances_ = computeDistances();
-    std::cerr << "computeDistances Done" << std::endl;
+    //std::cerr << "computeDistances Done" << std::endl;
 }
 
 void RigidBodyTemplate::computeFaces()
@@ -295,6 +374,7 @@ Eigen::VectorXd RigidBodyTemplate::computeDistances()
     }
     return distances;
 }
+
 
 double tripleProduct(Vector3d a, Vector3d b, Vector3d c)
 {

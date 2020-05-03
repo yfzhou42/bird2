@@ -11,6 +11,8 @@
 
 using namespace Eigen;
 
+int shattered = 0;
+
 namespace bird2 {
 
 BirdsCore::BirdsCore()
@@ -104,6 +106,130 @@ void BirdsCore::computeForces(VectorXd &Fc, VectorXd &Ftheta)
         }
     }
 }
+//decide to shatter or not 
+set<int> BirdsCore::toShatter(int index) {
+    set<int> goingToShatter;
+    /*
+    for all voronoi in body i
+        does voronoi violate contraint?
+            cut all connected springs.
+            
+    if any springs are cut, return true
+    */
+    for (int i = 0; i < bodies_[index]->voronois.size(); i++) {
+        VoronoiPoint* vp = &bodies_[index]->voronois[i];
+        for(Spring* s : vp->springs){
+            Vector3d decomp_Fc;
+            if(s->p1 == i){
+                Vector3d springVec = vp->center - bodies_[index]->voronois[s->p2].center;
+                decomp_Fc = (vp->Fc.dot(springVec) / springVec.squaredNorm()) * springVec;
+            }
+            else{
+                Vector3d springVec = vp->center - bodies_[index]->voronois[s->p1].center;
+                decomp_Fc = (vp->Fc.dot(springVec) / springVec.squaredNorm()) * springVec;
+            }
+            vp->addForce(-decomp_Fc);
+        }
+        if(vp->Fc.squaredNorm() > pow(params_->maxStrain, 2))
+            goingToShatter.insert(i);
+    }
+    return goingToShatter;
+}
+
+void BirdsCore::breakVoronois() {
+    int sizeToCheck = bodies_.size();
+    //Need this to index into Force vector
+    int originalIndex = 0;
+    for (int i = 0 ; i < sizeToCheck; i++, originalIndex++) {
+        set<int> brokenVoronoi = toShatter(i);
+        if(brokenVoronoi.size() > 0){
+            // Based on spring network construct new bodies.
+            shatter(i, brokenVoronoi);
+            i--;
+            sizeToCheck--;
+        }
+    }
+}
+
+typedef struct Node{
+    set<int> ids;
+    //check if two Nodes share an id
+    bool overlap(Node other){
+        for(int i : other.ids){
+            if(ids.find(i) != ids.end()) return true;
+        }
+        return false;
+    }
+} Node;
+
+typedef struct Tree{
+    vector<Node> nodes;
+
+    //Construct list of Nodes based on the Voronoi p
+    Tree(vector<VoronoiPoint> vps){
+        for(int i = 0 ; i < vps.size(); i++){
+            VoronoiPoint vp = vps[i];
+            Node n;
+            n.ids.insert(i);
+            for(Spring* s : vp.springs){
+                n.ids.insert(s->p1);
+                n.ids.insert(s->p2);
+            }
+            nodes.push_back(n);
+        }
+        merge();
+    }
+    //Merge all nodes together to create a forest
+    void merge(){
+        for(int i = 0; i < nodes.size(); i++){
+            for(int j = i + 1; j < nodes.size(); j++) {
+                if(nodes[i].overlap(nodes[j])){
+                    nodes[i].ids.insert(nodes[j].ids.begin(), nodes[j].ids.end());
+                    nodes.erase(nodes.begin() + j);
+                    return merge();
+                }
+            }
+        }
+    }
+} Tree;
+
+void BirdsCore::shatter(int bodyIndex, set<int> brokenVoronoi) {
+    /*
+    When a rigid body breaks, the subbodies need to inherit the parent's position
+        pos = parentPos + parentRot * voronoiCenterOfMass;
+        rot = parentRot
+        cvel = parentCVel
+        w = ? parentW for now
+    */
+    shared_ptr<RigidBodyInstance> b = bodies_[bodyIndex];
+    // Update spring network to remove broken springs.
+    for (int i = 0; i < b->springs.size(); i++) {
+        if(brokenVoronoi.find(b->springs[i].p1) != brokenVoronoi.end() || brokenVoronoi.find(b->springs[i].p2) != brokenVoronoi.end()){
+            b->springs.erase(b->springs.begin() + i);
+            i--;
+        }
+    } 
+    
+    //Create new VoronoiPoints through springs that are still connected
+    Tree voronoiIndexes(b->voronois);
+    vector<VoronoiPoint> newBodies;
+    for(int i = 0; i < voronoiIndexes.nodes.size(); i++){
+        VoronoiPoint vp;
+        for(int vIndex : voronoiIndexes.nodes[i].ids){
+            vp.mergeT(b->voronois[vIndex]);
+        }
+        newBodies.push_back(vp);
+    }
+    
+    for (VoronoiPoint vp : newBodies) {
+        //Make a template for the voronoi fragment
+        vp.remapVerts(bodies_[bodyIndex]->getTemplate().getVerts());
+        templates_.emplace_back(new RigidBodyTemplate(vp.remappedVerts,vp.remappedTets));
+        Vector3d pos = bodies_[bodyIndex]->c + VectorMath::rotationMatrix(bodies_[bodyIndex]->theta) * templates_.back()->getCenterOfMass();
+        addSingleInstance(templates_.back(), bodies_[bodyIndex]->density, pos, bodies_[bodyIndex]->theta, bodies_[bodyIndex]->cvel, bodies_[bodyIndex]->w);
+    }
+    bodies_.erase(bodies_.begin() + bodyIndex);
+}
 
 bool BirdsCore::simulateOneStep()
 {
@@ -114,6 +240,7 @@ bool BirdsCore::simulateOneStep()
     for(int bodyidx=0; bodyidx < (int)bodies_.size(); bodyidx++)
     {
         RigidBodyInstance &body = *bodies_[bodyidx];
+        body.zeroVornoiForces();
         body.c += params_->timeStep*body.cvel;
         Matrix3d Rhw = VectorMath::rotationMatrix(params_->timeStep*body.w);
         Matrix3d Rtheta = VectorMath::rotationMatrix(body.theta);
@@ -167,6 +294,8 @@ bool BirdsCore::simulateOneStep()
         // std::cout << "Converged in " << iter << " Newton iterations" << std::endl;
         body.w = newwguess;
     }
+
+    breakVoronois();
 
     return false;
 }
@@ -246,6 +375,7 @@ void BirdsCore::computePenaltyCollisionForces(const std::set<Collision>& collisi
 
     // TODO compute and add penalty forces
     for(Collision c : collisions){
+        //std::cout << c.body1 <<c.body2 << std::endl;
         double dist;
         Vector3d derivDist;
         Matrix3d rotB1 = VectorMath::rotationMatrix(bodies_[c.body1]->theta);
@@ -260,6 +390,7 @@ void BirdsCore::computePenaltyCollisionForces(const std::set<Collision>& collisi
             derivDist = Vector3d(0.0, 1.0, 0.0);
         }
         else {
+            //std::cout << "NON FLOOR COLLISION" << std::endl;
             rotB2 = VectorMath::rotationMatrix(bodies_[c.body2]->theta);
             Vector3d phi = rotB2.transpose() * (rotB1 * vertHit + bodies_[c.body1]->c - bodies_[c.body2]->c); 
 
@@ -269,17 +400,27 @@ void BirdsCore::computePenaltyCollisionForces(const std::set<Collision>& collisi
 
         Vector3d term1 = params_->penaltyStiffness * dist * derivDist;
         
-        if(c.body2 != -1)
+        if(c.body2 != -1){
             Fc.segment<3>(c.body2 * 3) -= term1.transpose() * -rotB2.transpose();
+        }
         Fc.segment<3>(c.body1 * 3) -= term1.transpose() * rotB2.transpose();
         
-        if(c.body2 != -1)
+        if(c.body2 != -1){
             Ftheta.segment<3>(c.body2 * 3) -= term1.transpose() * rotB2.transpose() * VectorMath::crossProductMatrix(rotB1 * vertHit + bodies_[c.body1]->c - bodies_[c.body2]->c)
                 * VectorMath::TMatrix(-bodies_[c.body2]->theta);
+        }
         
         Ftheta.segment<3>(c.body1 * 3) -= term1.transpose() * rotB2.transpose() * (-rotB1 * VectorMath::crossProductMatrix(vertHit)
             * VectorMath::TMatrix(bodies_[c.body1]->theta));
-    
+        
+        // Update both voronoi points with Fc.
+        if(c.body2 != -1){
+            int v2 = bodies_[c.body2]->lookupVoronoiFromTet(c.collidingTet);
+            bodies_[c.body2]->voronois[v2].addForce(-term1.transpose() * -rotB2.transpose());
+        }
+        int v1 = bodies_[c.body1]->lookupVoronoiFromVert(c.collidingVertex);
+        bodies_[c.body1]->voronois[v1].addForce(-term1.transpose() * rotB2.transpose());
+
     }
 }
 

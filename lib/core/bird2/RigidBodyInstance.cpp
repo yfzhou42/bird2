@@ -17,6 +17,8 @@ RigidBodyInstance::RigidBodyInstance(const RigidBodyTemplate &rbtemplate,
     : c(c), theta(theta), cvel(cvel), w(w), density(density), rbtemplate_(rbtemplate)
 {
     AABB = buildAABB(this);
+    voronois = rbtemplate.voronois;
+    springs = rbtemplate.springs;
 }
 
 RigidBodyInstance::~RigidBodyInstance()
@@ -24,5 +26,9 @@ RigidBodyInstance::~RigidBodyInstance()
     freeAABB(AABB);
     AABB = nullptr;
 }
+
+int RigidBodyInstance::lookupVoronoiFromTet(int tet){ return rbtemplate_.lookupVoronoiFromTet(tet); }
+
+int RigidBodyInstance::lookupVoronoiFromVert(int vert) { return rbtemplate_.lookupVoronoiFromVert(vert); }
 
 }
