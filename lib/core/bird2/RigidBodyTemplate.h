@@ -8,6 +8,8 @@
 #include "Voronoi.h"
 #include "Spring.h"
 
+#define VORONOI_POINTS 10
+
 namespace bird2 {
 
 class SignedDistanceField;
@@ -34,7 +36,7 @@ public:
     Eigen::Vector3d Ddistance(int tet) const;
 
     std::vector<VoronoiPoint> voronois;
-    std::vector<Spring> springs;
+    std::vector<Spring*> springs;
     
     int lookupVoronoiFromTet(int tet) const { return tetToVoronoi[tet]; }
     int lookupVoronoiFromVert(int vert) const { return vertToVoronoi[vert]; }

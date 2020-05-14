@@ -94,11 +94,6 @@ void BirdsCore::initSimulation()
 
 void BirdsCore::computeForces(VectorXd &Fc, VectorXd &Ftheta)
 {
-    Fc.resize(3*bodies_.size());
-    Ftheta.resize(3*bodies_.size());
-    Fc.setZero();
-    Ftheta.setZero();
-
     if (params_->gravityEnabled) {
         for (int i=0; i<bodies_.size(); i++) {
             double m = bodies_[i]->density * bodies_[i]->getTemplate().getVolume();
@@ -116,8 +111,14 @@ set<int> BirdsCore::toShatter(int index) {
             
     if any springs are cut, return true
     */
+   std::cout << __LINE__ << std::endl;
+
+    if(bodies_[index]->generation >= params_->maxGeneration) return goingToShatter;
+
+    vector<Vector3d> decompForces(bodies_[index]->voronois.size());
     for (int i = 0; i < bodies_[index]->voronois.size(); i++) {
         VoronoiPoint* vp = &bodies_[index]->voronois[i];
+        if(vp->Fc.squaredNorm() < 0.0001) continue;
         for(Spring* s : vp->springs){
             Vector3d decomp_Fc;
             if(s->p1 == i){
@@ -130,14 +131,34 @@ set<int> BirdsCore::toShatter(int index) {
             }
             vp->addForce(-decomp_Fc);
         }
-        if(vp->Fc.squaredNorm() > pow(params_->maxStrain, 2))
+        if(vp->Fc.squaredNorm() > pow(bodies_[index]->maxStrain, 2)) {
             goingToShatter.insert(i);
+            //add an extra force for the adjacent voronoi points
+            /*for(Spring* s : vp->springs){
+                Vector3d decomp_Fc;
+                if(s->p1 == i){
+                    Vector3d springVec = vp->center - bodies_[index]->voronois[s->p2].center;
+                    decomp_Fc = (vp->Fc.dot(springVec) / springVec.squaredNorm()) * springVec;
+                    //add an extra force for the adjacent voronoi points
+                    bodies_[index]->voronois[s->p2].addForce(decomp_Fc);
+                }
+                else{
+                    Vector3d springVec = vp->center - bodies_[index]->voronois[s->p1].center;
+                    decomp_Fc = (vp->Fc.dot(springVec) / springVec.squaredNorm()) * springVec;
+                    //add an extra force for the adjacent voronoi points
+                    bodies_[index]->voronois[s->p1].addForce(decomp_Fc);
+                }
+            }*/
+        }
     }
+   std::cout << __LINE__ << std::endl;
     return goingToShatter;
 }
 
-void BirdsCore::breakVoronois() {
+void BirdsCore::breakVoronois(Eigen::Ref<VectorXd> Fc, Eigen::Ref<VectorXd> Ftheta) {
+    if(!params_->fractureEnabled) return;
     int sizeToCheck = bodies_.size();
+   std::cout << __LINE__ << std::endl;
     //Need this to index into Force vector
     int originalIndex = 0;
     for (int i = 0 ; i < sizeToCheck; i++, originalIndex++) {
@@ -149,6 +170,22 @@ void BirdsCore::breakVoronois() {
             sizeToCheck--;
         }
     }
+   std::cout << __LINE__ << std::endl;
+
+    // Update force vectors to reflect the new rigid body list
+    Fc.resize(3 * bodies_.size());
+    Ftheta.resize(3 * bodies_.size());
+    for (int i = 0; i < bodies_.size(); i++) {
+        Vector3d bodyFc = Vector3d::Zero();
+        Vector3d bodyFtheta = Vector3d::Zero();
+        for (VoronoiPoint vp : bodies_[i]->voronois) {
+            bodyFc += vp.Fc;
+            bodyFtheta += vp.Ftheta;
+        }
+        Fc.segment<3>(i * 3) = bodyFc;
+        Ftheta.segment<3>(i * 3) = bodyFtheta;
+    }
+   std::cout << __LINE__ << std::endl;
 }
 
 typedef struct Node{
@@ -172,6 +209,7 @@ typedef struct Tree{
             Node n;
             n.ids.insert(i);
             for(Spring* s : vp.springs){
+                if(s->p1 == -1 || s->p2 == -1) continue;
                 n.ids.insert(s->p1);
                 n.ids.insert(s->p2);
             }
@@ -201,10 +239,13 @@ void BirdsCore::shatter(int bodyIndex, set<int> brokenVoronoi) {
         cvel = parentCVel
         w = ? parentW for now
     */
+   std::cout << __LINE__ << std::endl;
     shared_ptr<RigidBodyInstance> b = bodies_[bodyIndex];
     // Update spring network to remove broken springs.
     for (int i = 0; i < b->springs.size(); i++) {
-        if(brokenVoronoi.find(b->springs[i].p1) != brokenVoronoi.end() || brokenVoronoi.find(b->springs[i].p2) != brokenVoronoi.end()){
+        if(brokenVoronoi.find(b->springs[i]->p1) != brokenVoronoi.end() || brokenVoronoi.find(b->springs[i]->p2) != brokenVoronoi.end()){
+            b->springs[i]->p1 = -1;
+            b->springs[i]->p2 = -1;
             b->springs.erase(b->springs.begin() + i);
             i--;
         }
@@ -216,7 +257,7 @@ void BirdsCore::shatter(int bodyIndex, set<int> brokenVoronoi) {
     for(int i = 0; i < voronoiIndexes.nodes.size(); i++){
         VoronoiPoint vp;
         for(int vIndex : voronoiIndexes.nodes[i].ids){
-            vp.mergeT(b->voronois[vIndex]);
+            vp.merge(b->voronois[vIndex]);
         }
         newBodies.push_back(vp);
     }
@@ -226,13 +267,18 @@ void BirdsCore::shatter(int bodyIndex, set<int> brokenVoronoi) {
         vp.remapVerts(bodies_[bodyIndex]->getTemplate().getVerts());
         templates_.emplace_back(new RigidBodyTemplate(vp.remappedVerts,vp.remappedTets));
         Vector3d pos = bodies_[bodyIndex]->c + VectorMath::rotationMatrix(bodies_[bodyIndex]->theta) * templates_.back()->getCenterOfMass();
-        addSingleInstance(templates_.back(), bodies_[bodyIndex]->density, pos, bodies_[bodyIndex]->theta, bodies_[bodyIndex]->cvel, bodies_[bodyIndex]->w);
+        addSingleInstanceStrain(templates_.back(), bodies_[bodyIndex]->density, pos, bodies_[bodyIndex]->theta, bodies_[bodyIndex]->cvel, bodies_[bodyIndex]->w, bodies_[bodyIndex]->maxStrain);
+        bodies_.back()->generation = bodies_[bodyIndex]->generation + 1;
+        bodies_.back()->voronois[0].Fc = vp.Fc;
+        bodies_.back()->voronois[0].Ftheta = vp.Ftheta;
     }
     bodies_.erase(bodies_.begin() + bodyIndex);
+   std::cout << __LINE__ << std::endl;
 }
 
 bool BirdsCore::simulateOneStep()
 {
+        std::cout<<__LINE__<<std::endl;
     time_ += params_->timeStep;
     int nbodies = (int)bodies_.size();
 
@@ -262,13 +308,40 @@ bool BirdsCore::simulateOneStep()
 
     Eigen::VectorXd cForce(3 * nbodies);
     Eigen::VectorXd thetaForce(3 * nbodies);
-    computeForces(cForce, thetaForce);
 
     computePenaltyCollisionForces(collisions, cForce, thetaForce);
     applyCollisionImpulses(collisions);
 
+    breakVoronois(cForce, thetaForce);
+
+    computeForces(cForce, thetaForce);
+
+    if(nbodies != bodies_.size()){
+        nbodies = bodies_.size();
+        oldthetas.resize(nbodies);
+        for(int bodyidx=0; bodyidx < (int)bodies_.size(); bodyidx++)
+        {
+            RigidBodyInstance &body = *bodies_[bodyidx];
+            //body.zeroVornoiForces();
+            Matrix3d Rhw = VectorMath::rotationMatrix(params_->timeStep*body.w);
+            Matrix3d Rtheta = VectorMath::rotationMatrix(body.theta);
+
+            // FIXME: angular velocity >= 3*PI
+            Vector3d oldtheta = body.theta;
+            body.theta = VectorMath::axisAngle(Rtheta*Rhw);
+            if (body.theta.dot(oldtheta) < 0 && oldtheta.norm() > M_PI/2.0)
+            {
+                double oldnorm = oldtheta.norm();
+                oldtheta = (oldnorm - 2.0*M_PI)*oldtheta/oldnorm;
+            }
+            oldthetas[3] = oldtheta;
+        }
+    }
+    
+
     for(int bodyidx=0; bodyidx < (int)bodies_.size(); bodyidx++)
     {
+        std::cout<<__LINE__<<std::endl;
         RigidBodyInstance &body = *bodies_[bodyidx];
         Matrix3d Mi = body.getTemplate().getInertiaTensor();
 
@@ -294,8 +367,8 @@ bool BirdsCore::simulateOneStep()
         // std::cout << "Converged in " << iter << " Newton iterations" << std::endl;
         body.w = newwguess;
     }
+        std::cout<<__LINE__<<std::endl;
 
-    breakVoronois();
 
     return false;
 }
@@ -338,7 +411,22 @@ BirdsCore::addSingleInstance(std::shared_ptr<RigidBodyTemplate> rbt,
                              const Eigen::Vector3d &cvel,
                              const Eigen::Vector3d &w)
 {
-    bodies_.emplace_back(new RigidBodyInstance(*rbt, c, theta, cvel, w, density));
+    bodies_.emplace_back(new RigidBodyInstance(*rbt, c, theta, cvel, w, density, params_->maxStrain));
+    bodies_.back()->bid = rigid_body_id_++;
+    bodies_.back()->generation = 0;
+    return bodies_.back()->bid;
+}
+
+int32_t
+BirdsCore::addSingleInstanceStrain(std::shared_ptr<RigidBodyTemplate> rbt,
+                             double density,
+                             const Eigen::Vector3d &c,
+                             const Eigen::Vector3d &theta,
+                             const Eigen::Vector3d &cvel,
+                             const Eigen::Vector3d &w,
+                             const double maxStrain)
+{
+    bodies_.emplace_back(new RigidBodyInstance(*rbt, c, theta, cvel, w, density, maxStrain));
     bodies_.back()->bid = rigid_body_id_++;
     return bodies_.back()->bid;
 }
@@ -399,7 +487,7 @@ void BirdsCore::computePenaltyCollisionForces(const std::set<Collision>& collisi
         }
 
         Vector3d term1 = params_->penaltyStiffness * dist * derivDist;
-        
+        /*
         if(c.body2 != -1){
             Fc.segment<3>(c.body2 * 3) -= term1.transpose() * -rotB2.transpose();
         }
@@ -412,15 +500,18 @@ void BirdsCore::computePenaltyCollisionForces(const std::set<Collision>& collisi
         
         Ftheta.segment<3>(c.body1 * 3) -= term1.transpose() * rotB2.transpose() * (-rotB1 * VectorMath::crossProductMatrix(vertHit)
             * VectorMath::TMatrix(bodies_[c.body1]->theta));
-        
+        */
         // Update both voronoi points with Fc.
         if(c.body2 != -1){
             int v2 = bodies_[c.body2]->lookupVoronoiFromTet(c.collidingTet);
             bodies_[c.body2]->voronois[v2].addForce(-term1.transpose() * -rotB2.transpose());
+            bodies_[c.body2]->voronois[v2].addThetaForce(-term1.transpose() * rotB2.transpose() * VectorMath::crossProductMatrix(rotB1 * vertHit + bodies_[c.body1]->c - bodies_[c.body2]->c)
+                * VectorMath::TMatrix(-bodies_[c.body2]->theta));
         }
         int v1 = bodies_[c.body1]->lookupVoronoiFromVert(c.collidingVertex);
         bodies_[c.body1]->voronois[v1].addForce(-term1.transpose() * rotB2.transpose());
-
+        bodies_[c.body1]->voronois[v1].addThetaForce(-term1.transpose() * rotB2.transpose() * (-rotB1 * VectorMath::crossProductMatrix(vertHit)
+            * VectorMath::TMatrix(bodies_[c.body1]->theta)));
     }
 }
 

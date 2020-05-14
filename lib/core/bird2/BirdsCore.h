@@ -52,6 +52,15 @@ public:
                       const Eigen::Vector3d& cvel,
                       const Eigen::Vector3d& w);
 
+    int32_t
+    addSingleInstanceStrain(std::shared_ptr<RigidBodyTemplate> rbt,
+                      double density,
+                      const Eigen::Vector3d& c,
+                      const Eigen::Vector3d& theta,
+                      const Eigen::Vector3d& cvel,
+                      const Eigen::Vector3d& w,
+                      const double maxStrain);
+
     /*
      * addInstances:
      *    add rigid body instance from Qs.
@@ -83,7 +92,7 @@ private:
     void computeForces(Eigen::VectorXd& Fc, Eigen::VectorXd& Ftheta);
     void shatter(int bodyIndex, std::set<int> brokenVoronoi);
     std::set<int> toShatter(int index);
-    void breakVoronois();
+    void breakVoronois(Eigen::Ref<Eigen::VectorXd> Fc, Eigen::Ref<Eigen::VectorXd> Ftheta);
 
     double time_;
     std::shared_ptr<SimParameters> params_;

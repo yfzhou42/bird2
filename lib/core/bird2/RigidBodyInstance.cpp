@@ -13,12 +13,10 @@ namespace bird2 {
 RigidBodyInstance::RigidBodyInstance(const RigidBodyTemplate &rbtemplate,
     const Eigen::Vector3d &c, const Eigen::Vector3d &theta,
     const Eigen::Vector3d &cvel, const Eigen::Vector3d &w,
-    double density)
-    : c(c), theta(theta), cvel(cvel), w(w), density(density), rbtemplate_(rbtemplate)
+    double density, double maxStrain)
+    : c(c), theta(theta), cvel(cvel), w(w), density(density), rbtemplate_(rbtemplate), voronois(rbtemplate.voronois), springs(rbtemplate.springs), maxStrain(maxStrain)
 {
     AABB = buildAABB(this);
-    voronois = rbtemplate.voronois;
-    springs = rbtemplate.springs;
 }
 
 RigidBodyInstance::~RigidBodyInstance()

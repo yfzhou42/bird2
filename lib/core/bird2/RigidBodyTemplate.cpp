@@ -10,7 +10,6 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define VORONOI_POINTS 3
 
 namespace bird2 {
 
@@ -30,10 +29,6 @@ RigidBodyTemplate::RigidBodyTemplate(Eigen::Ref<Eigen::MatrixX3d> V,
     computeFaces();
     initialize();
     generateVoronoiPoints();
-    std::cout << "Springs Count: " << springs.size() << std::endl;
-    for (Spring s : springs) {
-        std::cout << "Vor Connection: " << s.p1 << "," << s.p2 << std::endl;
-    }
 }
 
 RigidBodyTemplate::RigidBodyTemplate(const Eigen::MatrixX3d& verts, const Eigen::MatrixX4i& tets)
@@ -74,12 +69,15 @@ void RigidBodyTemplate::generateVoronoiPoints(){
         Vector3d tetCenter = getTetCenter(V, T, i);
         for(int j = 0; j < voronoiCenters.size(); j++){
             double curDist = (tetCenter-voronoiCenters[j]).squaredNorm();
-            if ((tetCenter-voronoiCenters[j]).squaredNorm() < minDist){
+            if (curDist < minDist){
                 minDist = curDist;
                 minIndex = j;
             }
         }
-        if(minIndex == -1) std::cout << "THIS SHOULD NEVER EVER HAPPEN" << std::endl;
+        if(minIndex == -1){
+            cout << "VoronoiCenters.size() " << voronoiCenters.size() << endl;
+            std::cout << "THIS SHOULD NEVER EVER HAPPEN" << std::endl;
+        } 
         voronoiTets[minIndex].push_back(T.row(i));
         //Save the voronoi->tet reference for lookup later.
         tetToVoronoi[i] = minIndex;
@@ -150,9 +148,9 @@ void RigidBodyTemplate::generateSprings() {
                 makeFaces(T2.row(t2), faces);
                 for(set<int> f : faces){
                     if(tetSet1.find(f) != tetSet1.end()) {
-                        springs.push_back(Spring(i, j));
-                        voronois[i].springs.push_back(&springs.back());
-                        voronois[j].springs.push_back(&springs.back());
+                        springs.push_back(new Spring(i, j));
+                        voronois[i].springs.push_back(springs.back());
+                        voronois[j].springs.push_back(springs.back());
                         connected = true;
                         break;
                     }

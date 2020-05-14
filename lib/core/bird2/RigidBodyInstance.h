@@ -16,7 +16,7 @@ struct AABBNode;
 class RigidBodyInstance
 {
 public:
-    RigidBodyInstance(const RigidBodyTemplate &rbtemplate, const Eigen::Vector3d &c, const Eigen::Vector3d &theta, const Eigen::Vector3d &cvel, const Eigen::Vector3d &w, double density);
+    RigidBodyInstance(const RigidBodyTemplate &rbtemplate, const Eigen::Vector3d &c, const Eigen::Vector3d &theta, const Eigen::Vector3d &cvel, const Eigen::Vector3d &w, double density, double maxStrain);
     ~RigidBodyInstance();
 
     Eigen::Vector3d c;
@@ -26,9 +26,13 @@ public:
     Eigen::Vector3d w;
 
     std::vector<VoronoiPoint> voronois;
-    std::vector<Spring> springs;
+    std::vector<Spring*> springs;
+
+    double maxStrain;
 
     double density;
+
+    int generation;
 
     AABBNode *AABB;
     
