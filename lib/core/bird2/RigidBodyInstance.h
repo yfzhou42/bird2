@@ -48,6 +48,7 @@ public:
 
     int32_t bid;
 private:
+    void generateSprings();
     const RigidBodyTemplate &rbtemplate_;
 };
 

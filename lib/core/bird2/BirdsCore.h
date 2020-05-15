@@ -7,6 +7,7 @@
 #include <Eigen/StdVector>
 #include <memory>
 #include <set>
+#include "Voronoi.h"
 
 namespace bird2 {
 
@@ -93,6 +94,7 @@ private:
     void shatter(int bodyIndex, std::set<int> brokenVoronoi);
     std::set<int> toShatter(int index);
     void breakVoronois(Eigen::VectorXd& Fc, Eigen::VectorXd& Ftheta);
+    void makeNewBodiesFromPoints(std::vector<VoronoiPoint>& newBodies, int bodyIndex);
 
     double time_;
     std::shared_ptr<SimParameters> params_;

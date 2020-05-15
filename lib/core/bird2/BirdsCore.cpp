@@ -151,6 +151,9 @@ set<int> BirdsCore::toShatter(int index) {
                     bodies_[index]->voronois[s->p1].addForce(decomp_Fc);
                 }
             }
+            for (int j = 0; j < bodies_[index]->voronois.size(); j++) {
+                vp->Fc = decompForces[j];
+            }
         }
     }
     return goingToShatter;
@@ -224,7 +227,7 @@ typedef struct Tree{
                 if(nodes[i].overlap(nodes[j])){
                     nodes[i].ids.insert(nodes[j].ids.begin(), nodes[j].ids.end());
                     nodes.erase(nodes.begin() + j);
-                    j--;
+                    return merge();
                 }
             }
         }
@@ -259,12 +262,16 @@ void BirdsCore::shatter(int bodyIndex, set<int> brokenVoronoi) {
         newBodies.push_back(vp);
     }
     
+    makeNewBodiesFromPoints(newBodies, bodyIndex);
+}
+
+void BirdsCore::makeNewBodiesFromPoints(vector<VoronoiPoint>& newBodies, int bodyIndex){
     for (VoronoiPoint vp : newBodies) {
         //Make a template for the voronoi fragment
         auto remappedVoronoi = vp.remapVerts(bodies_[bodyIndex]->getTemplate().getVerts());
         templates_.emplace_back(new RigidBodyTemplate(remappedVoronoi.second, remappedVoronoi.first));
         Vector3d pos = bodies_[bodyIndex]->c + VectorMath::rotationMatrix(bodies_[bodyIndex]->theta) * templates_.back()->getCenterOfMass();
-        addSingleInstanceStrain(templates_.back(), bodies_[bodyIndex]->density, pos, bodies_[bodyIndex]->theta, bodies_[bodyIndex]->cvel, bodies_[bodyIndex]->w, bodies_[bodyIndex]->maxStrain);
+        addSingleInstanceStrain(templates_.back(), bodies_[bodyIndex]->density, pos, bodies_[bodyIndex]->theta, bodies_[bodyIndex]->cvel, bodies_[bodyIndex]->w, bodies_[bodyIndex]->maxStrain * params_->generationMultiplier);
         bodies_.back()->generation = bodies_[bodyIndex]->generation + 1;
         bodies_.back()->voronois[0].Fc = vp.Fc;
         bodies_.back()->voronois[0].Ftheta = vp.Ftheta;
@@ -362,7 +369,6 @@ bool BirdsCore::simulateOneStep()
         body.w = newwguess;
     }
 
-    std::cout << "Body Count: " << nbodies << std::endl;
     return false;
 }
 
@@ -481,7 +487,7 @@ void BirdsCore::computePenaltyCollisionForces(const std::set<Collision>& collisi
 
         Vector3d term1 = params_->penaltyStiffness * dist * derivDist;
         
-        /*
+        
         if(c.body2 != -1){
             Fc.segment<3>(c.body2 * 3) -= term1.transpose() * -rotB2.transpose();
         }
@@ -494,7 +500,7 @@ void BirdsCore::computePenaltyCollisionForces(const std::set<Collision>& collisi
         
         Ftheta.segment<3>(c.body1 * 3) -= term1.transpose() * rotB2.transpose() * (-rotB1 * VectorMath::crossProductMatrix(vertHit)
             * VectorMath::TMatrix(bodies_[c.body1]->theta));
-        */
+        
         // Update both voronoi points with Fc.
         if(c.body2 != -1){
             int v2 = bodies_[c.body2]->lookupVoronoiFromTet(c.collidingTet);

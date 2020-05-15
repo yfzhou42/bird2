@@ -21,6 +21,7 @@ struct SimParameters
         maxStrain = 1.0;
         springStiffness = 0.5;
         maxGeneration = 1;
+        generationMultiplier = 1.0;
     }
 
     float timeStep;
@@ -38,6 +39,7 @@ struct SimParameters
     float maxStrain;
     float springStiffness;
     int maxGeneration;
+    float generationMultiplier;
 };
 
 }
