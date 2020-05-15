@@ -12,7 +12,7 @@ BirdsHook::BirdsHook(BirdsCore *core)
         : PhysicsHook(core), core_(core), params_(*core->getPointerToSimParameters())
 {
     std::cerr << ">>> Initializing the Bird" << std::endl;
-    bird_ = std::make_shared<RigidBodyTemplate>(furious_bird_v, furious_bird_f, 1.0);
+    bird_ = std::make_shared<RigidBodyTemplate>(furious_bird_v, furious_bird_f, 0.5);
     std::cerr << ">>> Bird Initialized" << std::endl;
 }
 
@@ -56,6 +56,9 @@ void BirdsHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
         ImGui::InputFloat("Penalty Stiffness", &params_.penaltyStiffness, 0, 0, 3);
         ImGui::Checkbox("Impulses Enabled", &params_.impulsesEnabled);
         ImGui::InputFloat("CoR", &params_.CoR, 0, 0, 3);
+        ImGui::Checkbox("Fracture Enabled", &params_.fractureEnabled);
+        ImGui::InputFloat("Fracture Max Strain", &params_.maxStrain);
+        ImGui::InputInt("Max Fracture Iteration", &params_.maxGeneration);
     }
 }
 

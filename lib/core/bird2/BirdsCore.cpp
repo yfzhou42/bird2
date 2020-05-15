@@ -94,6 +94,11 @@ void BirdsCore::initSimulation()
 
 void BirdsCore::computeForces(VectorXd &Fc, VectorXd &Ftheta)
 {
+    Fc.resize(3*bodies_.size());
+    Ftheta.resize(3*bodies_.size());
+    Fc.setZero();
+    Ftheta.setZero();
+
     if (params_->gravityEnabled) {
         for (int i=0; i<bodies_.size(); i++) {
             double m = bodies_[i]->density * bodies_[i]->getTemplate().getVolume();
@@ -134,7 +139,8 @@ set<int> BirdsCore::toShatter(int index) {
         if(vp->Fc.squaredNorm() > pow(bodies_[index]->maxStrain, 2)) {
             goingToShatter.insert(i);
             //add an extra force for the adjacent voronoi points
-            /*for(Spring* s : vp->springs){
+            /*
+            for(Spring* s : vp->springs){
                 Vector3d decomp_Fc;
                 if(s->p1 == i){
                     Vector3d springVec = vp->center - bodies_[index]->voronois[s->p2].center;
@@ -148,7 +154,8 @@ set<int> BirdsCore::toShatter(int index) {
                     //add an extra force for the adjacent voronoi points
                     bodies_[index]->voronois[s->p1].addForce(decomp_Fc);
                 }
-            }*/
+            }
+            */
         }
     }
    std::cout << __LINE__ << std::endl;
@@ -173,6 +180,7 @@ void BirdsCore::breakVoronois(Eigen::Ref<VectorXd> Fc, Eigen::Ref<VectorXd> Fthe
    std::cout << __LINE__ << std::endl;
 
     // Update force vectors to reflect the new rigid body list
+    /*
     Fc.resize(3 * bodies_.size());
     Ftheta.resize(3 * bodies_.size());
     for (int i = 0; i < bodies_.size(); i++) {
@@ -186,6 +194,7 @@ void BirdsCore::breakVoronois(Eigen::Ref<VectorXd> Fc, Eigen::Ref<VectorXd> Fthe
         Ftheta.segment<3>(i * 3) = bodyFtheta;
     }
    std::cout << __LINE__ << std::endl;
+   */
 }
 
 typedef struct Node{
@@ -312,11 +321,10 @@ bool BirdsCore::simulateOneStep()
     computePenaltyCollisionForces(collisions, cForce, thetaForce);
     applyCollisionImpulses(collisions);
 
-    breakVoronois(cForce, thetaForce);
 
     computeForces(cForce, thetaForce);
 
-    if(nbodies != bodies_.size()){
+    /*if(nbodies != bodies_.size()){
         nbodies = bodies_.size();
         oldthetas.resize(nbodies);
         for(int bodyidx=0; bodyidx < (int)bodies_.size(); bodyidx++)
@@ -336,7 +344,7 @@ bool BirdsCore::simulateOneStep()
             }
             oldthetas[3] = oldtheta;
         }
-    }
+    }*/
     
 
     for(int bodyidx=0; bodyidx < (int)bodies_.size(); bodyidx++)
@@ -369,6 +377,7 @@ bool BirdsCore::simulateOneStep()
     }
         std::cout<<__LINE__<<std::endl;
 
+    breakVoronois(cForce, thetaForce);
 
     return false;
 }
@@ -487,7 +496,7 @@ void BirdsCore::computePenaltyCollisionForces(const std::set<Collision>& collisi
         }
 
         Vector3d term1 = params_->penaltyStiffness * dist * derivDist;
-        /*
+        
         if(c.body2 != -1){
             Fc.segment<3>(c.body2 * 3) -= term1.transpose() * -rotB2.transpose();
         }
@@ -500,7 +509,7 @@ void BirdsCore::computePenaltyCollisionForces(const std::set<Collision>& collisi
         
         Ftheta.segment<3>(c.body1 * 3) -= term1.transpose() * rotB2.transpose() * (-rotB1 * VectorMath::crossProductMatrix(vertHit)
             * VectorMath::TMatrix(bodies_[c.body1]->theta));
-        */
+        
         // Update both voronoi points with Fc.
         if(c.body2 != -1){
             int v2 = bodies_[c.body2]->lookupVoronoiFromTet(c.collidingTet);
