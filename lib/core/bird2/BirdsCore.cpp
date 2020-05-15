@@ -136,7 +136,6 @@ set<int> BirdsCore::toShatter(int index) {
         if(decompForces[i].squaredNorm() > pow(bodies_[index]->maxStrain, 2)) {
             goingToShatter.insert(i);
             //add an extra force for the adjacent voronoi points
-            /*
             for(Spring* s : vp->springs){
                 Vector3d decomp_Fc;
                 if(s->p1 == i){
@@ -152,7 +151,6 @@ set<int> BirdsCore::toShatter(int index) {
                     bodies_[index]->voronois[s->p1].addForce(decomp_Fc);
                 }
             }
-            */
         }
     }
     return goingToShatter;
@@ -205,12 +203,12 @@ typedef struct Tree{
     vector<Node> nodes;
 
     //Construct list of Nodes based on the Voronoi p
-    Tree(vector<VoronoiPoint> vps){
+    Tree(const vector<VoronoiPoint>& vps){
         for(int i = 0 ; i < vps.size(); i++){
-            VoronoiPoint vp = vps[i];
+            const VoronoiPoint* vp = &vps[i];
             Node n;
             n.ids.insert(i);
-            for(Spring* s : vp.springs){
+            for(const Spring* s : vp->springs){
                 if(s->p1 == -1 || s->p2 == -1) continue;
                 n.ids.insert(s->p1);
                 n.ids.insert(s->p2);
@@ -226,7 +224,7 @@ typedef struct Tree{
                 if(nodes[i].overlap(nodes[j])){
                     nodes[i].ids.insert(nodes[j].ids.begin(), nodes[j].ids.end());
                     nodes.erase(nodes.begin() + j);
-                    return merge();
+                    j--;
                 }
             }
         }
@@ -247,8 +245,6 @@ void BirdsCore::shatter(int bodyIndex, set<int> brokenVoronoi) {
         if(brokenVoronoi.find(b->springs[i]->p1) != brokenVoronoi.end() || brokenVoronoi.find(b->springs[i]->p2) != brokenVoronoi.end()){
             b->springs[i]->p1 = -1;
             b->springs[i]->p2 = -1;
-            b->springs.erase(b->springs.begin() + i);
-            i--;
         }
     } 
     
@@ -265,8 +261,8 @@ void BirdsCore::shatter(int bodyIndex, set<int> brokenVoronoi) {
     
     for (VoronoiPoint vp : newBodies) {
         //Make a template for the voronoi fragment
-        vp.remapVerts(bodies_[bodyIndex]->getTemplate().getVerts());
-        templates_.emplace_back(new RigidBodyTemplate(vp.remappedVerts,vp.remappedTets));
+        auto remappedVoronoi = vp.remapVerts(bodies_[bodyIndex]->getTemplate().getVerts());
+        templates_.emplace_back(new RigidBodyTemplate(remappedVoronoi.second, remappedVoronoi.first));
         Vector3d pos = bodies_[bodyIndex]->c + VectorMath::rotationMatrix(bodies_[bodyIndex]->theta) * templates_.back()->getCenterOfMass();
         addSingleInstanceStrain(templates_.back(), bodies_[bodyIndex]->density, pos, bodies_[bodyIndex]->theta, bodies_[bodyIndex]->cvel, bodies_[bodyIndex]->w, bodies_[bodyIndex]->maxStrain);
         bodies_.back()->generation = bodies_[bodyIndex]->generation + 1;
@@ -366,6 +362,7 @@ bool BirdsCore::simulateOneStep()
         body.w = newwguess;
     }
 
+    std::cout << "Body Count: " << nbodies << std::endl;
     return false;
 }
 

@@ -141,7 +141,7 @@ void RigidBodyTemplate::generateSprings() {
             tetSet1.insert(faces.begin(), faces.end());
         }
         for (int j = i + 1; j < voronois.size(); j++) {
-            MatrixX4i T2 = voronois[i].T;
+            MatrixX4i T2 = voronois[j].T;
             bool connected = false;
             for (int t2 = 0; t2 < T2.size() && !connected; t2++) {
                 set<set<int>> faces;

@@ -51,13 +51,14 @@ public:
         Ftheta += other.Ftheta;
     }
 
-    Eigen::MatrixX3d remappedVerts;
-    Eigen::MatrixX4i remappedTets;
-
-    void remapVerts(const Eigen::MatrixX3d& V) {
+    std::pair<MatrixX4i, MatrixX3d> remapVerts(const Eigen::MatrixX3d& V) {
         vector<Vector3d> verts;
         vector<Vector4i> tets;
         map<int, int> indexList;
+
+        Eigen::MatrixX3d remappedVerts;
+        Eigen::MatrixX4i remappedTets;
+        
         for(int i = 0; i < T.rows(); i++){
             Vector4i tet;
             for(int j = 0; j < 4; j++) {
@@ -91,6 +92,8 @@ public:
         for(int i = 0; i < tets.size(); i++) {
             remappedTets.row(i) = tets[i];
         }
+
+        return std::make_pair(remappedTets, remappedVerts);
     }
 };
 
