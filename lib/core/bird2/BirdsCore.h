@@ -92,7 +92,7 @@ private:
     void computeForces(Eigen::VectorXd& Fc, Eigen::VectorXd& Ftheta);
     void shatter(int bodyIndex, std::set<int> brokenVoronoi);
     std::set<int> toShatter(int index);
-    void breakVoronois(Eigen::Ref<Eigen::VectorXd> Fc, Eigen::Ref<Eigen::VectorXd> Ftheta);
+    void breakVoronois(Eigen::VectorXd& Fc, Eigen::VectorXd& Ftheta);
 
     double time_;
     std::shared_ptr<SimParameters> params_;

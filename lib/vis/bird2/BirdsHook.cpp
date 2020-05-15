@@ -4,6 +4,7 @@
 #include <igl/opengl/glfw/imgui/ImGuiHelpers.h>
 #include <igl/file_dialog_open.h>
 #include "furious_bird.inc"
+#include "../../core/bird2/helper.h"
 
 using namespace Eigen;
 
@@ -12,7 +13,9 @@ BirdsHook::BirdsHook(BirdsCore *core)
         : PhysicsHook(core), core_(core), params_(*core->getPointerToSimParameters())
 {
     std::cerr << ">>> Initializing the Bird" << std::endl;
-    bird_ = std::make_shared<RigidBodyTemplate>(furious_bird_v, furious_bird_f, 0.5);
+    auto tup = bird1::loadOBJ("../assets/birds/sphere.obj");
+    bird_ = std::make_shared<RigidBodyTemplate>(std::get<0>(tup), std::get<1>(tup), 0.1);
+    //bird_ = std::make_shared<RigidBodyTemplate>(furious_bird_v, furious_bird_f, 0.1);
     std::cerr << ">>> Bird Initialized" << std::endl;
 }
 
