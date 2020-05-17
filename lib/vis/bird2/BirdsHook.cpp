@@ -63,6 +63,8 @@ void BirdsHook::drawGUI(igl::opengl::glfw::imgui::ImGuiMenu &menu)
         ImGui::InputFloat("Fracture Max Strain", &params_.maxStrain);
         ImGui::InputInt("Max Fracture Iteration", &params_.maxGeneration);
         ImGui::InputFloat("Strain Multiplier", &params_.generationMultiplier);
+        ImGui::Checkbox("Lagrangain Break Enabled", &params_.lagrangianFracture);
+        ImGui::InputFloat("Lagrangian Max", &params_.lagrangianMax);
     }
 }
 

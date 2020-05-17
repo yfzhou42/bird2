@@ -5,20 +5,36 @@
 #include <map>
 #include "Spring.h"
 #include <iostream>
+#include "RigidBodyData.h"
 
 using namespace Eigen;
 using namespace std;
 
+namespace bird2{
+
+typedef struct FalseStep{
+    Vector3d c;
+    Vector3d v;
+}FalseStep;
+
 class VoronoiPoint
 {
 private:
-    /* data */
+    //If dirty then we need to remake rigidBodyData
+    bool dirty;
+    RigidBodyData* rigidBodyData;
+    void updateRigidBodyData(){
+        if(dirty){
+            throw "RIGIDBODYDATA HASN'T BEEN UPDATED, PLEASE CALL remapVerts(V) BEFORE USING";
+        }
+    }
 public:
     Eigen::MatrixX4i T;
     Eigen::Vector3d center;
     vector<Spring*> springs;
     Eigen::Vector3d Fc;
     Eigen::Vector3d Ftheta;
+    FalseStep falseStep;
 
     void addForce(Eigen::Vector3d Fc){
         this->Fc += Fc;
@@ -33,12 +49,16 @@ public:
         center = Eigen::Vector3d::Zero();
         Fc = Eigen::Vector3d::Zero();
         Ftheta = Eigen::Vector3d::Zero();
+        dirty = true;
+        rigidBodyData = NULL;
     }
     VoronoiPoint(Eigen::Vector3d center, Eigen::MatrixX4i T){
         this->T = T;
         this->center = center;
         Fc = Eigen::Vector3d::Zero();
         Ftheta = Eigen::Vector3d::Zero();
+        dirty = true;
+        rigidBodyData = NULL;
     }
 
     void merge(const VoronoiPoint& other){
@@ -49,9 +69,28 @@ public:
         }
         Fc += other.Fc;
         Ftheta += other.Ftheta;
+        dirty = true;
+    }
+
+    Eigen::Vector3d getCOM(){
+        updateRigidBodyData();
+        return rigidBodyData->getCenterOfMass();
+    }
+
+    Eigen::Matrix3d getInertiaTensor(){
+        updateRigidBodyData();
+        return rigidBodyData->getInertiaTensor();
+    }
+
+    double getVolume(){
+        updateRigidBodyData();
+        return rigidBodyData->getVolume();
     }
 
     std::pair<MatrixX4i, MatrixX3d> remapVerts(const Eigen::MatrixX3d& V) {
+        if(!dirty){
+            return std::make_pair(rigidBodyData->getTets(), rigidBodyData->getVerts());
+        }
         vector<Vector3d> verts;
         vector<Vector4i> tets;
         map<int, int> indexList;
@@ -63,20 +102,12 @@ public:
             Vector4i tet;
             for(int j = 0; j < 4; j++) {
                 if (indexList.find(T.row(i)(j)) != indexList.end()){
-                    //cout << __LINE__ << endl;
                     tet(j) = indexList[T.row(i)(j)];
                 }
                 else {
-                    //cout << __LINE__ << endl;
                     indexList[T.row(i)(j)] = verts.size();
-                    /*cout << __LINE__ << endl;
-                    cout << "i: " << i << " j: " << j << endl;
-                    cout << "T.row(i)(j) " << T.row(i)(j) << endl;
-                    cout << "V.row...: " << V.row(T.row(i)(j)) << endl;*/
                     verts.push_back(V.row(T.row(i)(j)));
-                    //cout << __LINE__ << endl;
                     tet(j) = verts.size()-1;
-                    //cout << __LINE__ << endl;
                 }
             }
             tets.push_back(tet);
@@ -92,9 +123,13 @@ public:
         for(int i = 0; i < tets.size(); i++) {
             remappedTets.row(i) = tets[i];
         }
-
+        if(!rigidBodyData) delete rigidBodyData;
+        rigidBodyData = new RigidBodyData(remappedVerts, remappedTets);
+        dirty = false;
         return std::make_pair(remappedTets, remappedVerts);
     }
 };
+
+}
 
 #endif

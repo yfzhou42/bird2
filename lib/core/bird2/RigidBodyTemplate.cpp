@@ -11,6 +11,8 @@
 #include <time.h>
 
 
+#define VORONOI_POINTS 10
+
 namespace bird2 {
 
 using namespace std;

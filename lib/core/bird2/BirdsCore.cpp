@@ -98,21 +98,56 @@ void BirdsCore::computeForces(VectorXd &Fc, VectorXd &Ftheta)
         for (int i=0; i<bodies_.size(); i++) {
             double m = bodies_[i]->density * bodies_[i]->getTemplate().getVolume();
             Fc[3 * i + 1] -= params_->gravityG*m;
-            int voronoiCount = bodies_[i]->voronois.size();
         }
     }
 }
-//decide to shatter or not 
+
+typedef struct Node{
+    set<int> ids;
+    //check if two Nodes share an id
+    bool overlap(Node other){
+        for(int i : other.ids){
+            if(ids.find(i) != ids.end()) return true;
+        }
+        return false;
+    }
+} Node;
+
+typedef struct Tree{
+    vector<Node> nodes;
+
+    //Construct list of Nodes based on the Voronoi p
+    Tree(const vector<VoronoiPoint>& vps){
+        for(int i = 0 ; i < vps.size(); i++){
+            const VoronoiPoint* vp = &vps[i];
+            Node n;
+            n.ids.insert(i);
+            for(const Spring* s : vp->springs){
+                if(s->p1 == -1 || s->p2 == -1) continue;
+                n.ids.insert(s->p1);
+                n.ids.insert(s->p2);
+            }
+            nodes.push_back(n);
+        }
+        merge();
+    }
+    //Merge all nodes together to create a forest
+    void merge(){
+        for(int i = 0; i < nodes.size(); i++){
+            for(int j = i + 1; j < nodes.size(); j++) {
+                if(nodes[i].overlap(nodes[j])){
+                    nodes[i].ids.insert(nodes[j].ids.begin(), nodes[j].ids.end());
+                    nodes.erase(nodes.begin() + j);
+                    return merge();
+                }
+            }
+        }
+    }
+} Tree;
+
+//decide to shatter or not (This is our rough approx method)
 set<int> BirdsCore::toShatter(int index) {
     set<int> goingToShatter;
-    /*
-    for all voronoi in body i
-        does voronoi violate contraint?
-            cut all connected springs.
-            
-    if any springs are cut, return true
-    */
-
     if(bodies_[index]->generation >= params_->maxGeneration) return goingToShatter;
 
     vector<Vector3d> decompForces(bodies_[index]->voronois.size());
@@ -159,13 +194,54 @@ set<int> BirdsCore::toShatter(int index) {
     return goingToShatter;
 }
 
-void BirdsCore::breakVoronois(VectorXd& Fc, VectorXd& Ftheta) {
+std::set<int> BirdsCore::toShatterLagrangian(int index){
+    set<int> goingToShatter;
+    if(bodies_[index]->generation >= params_->maxGeneration) return goingToShatter;
+    //Super fun Lagrangian Stuff
+    VectorXd initialLambda = VectorXd::Zero(bodies_[index]->springs.size());
+    std::shared_ptr<RigidBodyInstance> body = bodies_[index];
+
+    // Building the input Vectors for Lagrangian Multiplier
+    int voronoiCount = bodies_[index]->voronois.size();
+    VectorXd q(3 * voronoiCount);
+    VectorXd v(3 * voronoiCount);
+    VectorXd F(3 * voronoiCount);
+    SparseMatrix<double> Minv(3 * voronoiCount, 3 * voronoiCount);
+    Minv.setZero();
+    std::vector<Triplet<double>> Minvcoeffs;
+    for(int i = 0; i < voronoiCount; i++) {
+        q.segment<3>(3 * i) = bodies_[index]->voronois[i].falseStep.c;
+        v.segment<3>(3 * i) = bodies_[index]->voronois[i].falseStep.v;
+        F.segment<3>(3 * i) = bodies_[index]->voronois[i].Fc;
+        double massInv = 1.0 / bodies_[index]->density / bodies_[index]->voronois[i].getVolume();
+        Minvcoeffs.emplace_back(3 * i, 3 * i, massInv);
+        Minvcoeffs.emplace_back(3 * i + 1, 3 * i + 1, massInv);
+        Minvcoeffs.emplace_back(3 * i + 2, 3 * i + 2, massInv);
+    }
+    Minv.setFromTriplets(Minvcoeffs.begin(), Minvcoeffs.end());
+
+    VectorXd lambda = computeLagrangianMultiplier(index, q, v, F, Minv, initialLambda);
+    for (int i = 0; i < bodies_[index]->springs.size(); i++) {
+        if (lambda[i] > params_->lagrangianMax) {
+            bodies_[index]->springs[i]->p1 = -1;
+            bodies_[index]->springs[i]->p2 = -1;
+        }
+    }
+    Tree t(bodies_[index]->voronois);
+    //Trust
+    if(t.nodes.size() > 1){
+        goingToShatter.insert(-2);
+    }
+    return goingToShatter;
+}
+
+void BirdsCore::breakVoronois(VectorXd& Fc, VectorXd& Ftheta, bool Lagrangian) {
     if(!params_->fractureEnabled) return;
     int sizeToCheck = bodies_.size();
     //Need this to index into Force vector
     int originalIndex = 0;
     for (int i = 0 ; i < sizeToCheck; i++, originalIndex++) {
-        set<int> brokenVoronoi = toShatter(i);
+        set<int> brokenVoronoi = Lagrangian ? toShatterLagrangian(i) : toShatter(i);
         if(brokenVoronoi.size() > 0){
             // Based on spring network construct new bodies.
             shatter(i, brokenVoronoi);
@@ -191,48 +267,6 @@ void BirdsCore::breakVoronois(VectorXd& Fc, VectorXd& Ftheta) {
    
 }
 
-typedef struct Node{
-    set<int> ids;
-    //check if two Nodes share an id
-    bool overlap(Node other){
-        for(int i : other.ids){
-            if(ids.find(i) != ids.end()) return true;
-        }
-        return false;
-    }
-} Node;
-
-typedef struct Tree{
-    vector<Node> nodes;
-
-    //Construct list of Nodes based on the Voronoi p
-    Tree(const vector<VoronoiPoint>& vps){
-        for(int i = 0 ; i < vps.size(); i++){
-            const VoronoiPoint* vp = &vps[i];
-            Node n;
-            n.ids.insert(i);
-            for(const Spring* s : vp->springs){
-                if(s->p1 == -1 || s->p2 == -1) continue;
-                n.ids.insert(s->p1);
-                n.ids.insert(s->p2);
-            }
-            nodes.push_back(n);
-        }
-        merge();
-    }
-    //Merge all nodes together to create a forest
-    void merge(){
-        for(int i = 0; i < nodes.size(); i++){
-            for(int j = i + 1; j < nodes.size(); j++) {
-                if(nodes[i].overlap(nodes[j])){
-                    nodes[i].ids.insert(nodes[j].ids.begin(), nodes[j].ids.end());
-                    nodes.erase(nodes.begin() + j);
-                    return merge();
-                }
-            }
-        }
-    }
-} Tree;
 
 void BirdsCore::shatter(int bodyIndex, set<int> brokenVoronoi) {
     /*
@@ -279,10 +313,100 @@ void BirdsCore::makeNewBodiesFromPoints(vector<VoronoiPoint>& newBodies, int bod
     bodies_.erase(bodies_.begin() + bodyIndex);
 }
 
+SparseMatrix<double> computeSelectionMat(int n, int i)
+{
+    SparseMatrix<double> S(3, 3 * n);
+    S.insert(0, 3 * i) = 1;
+    S.insert(1, 3 * i + 1) = 1;
+    S.insert(2, 3 * i + 2) = 1;
+    return S;
+}
+
+
+VectorXd BirdsCore::computeConstraint(int bodyIndex, const VectorXd& qGuess) const {
+    VectorXd toRet(bodies_[bodyIndex]->springs.size());
+    std::shared_ptr<RigidBodyInstance> body = bodies_[bodyIndex];
+    for(int i = 0; i < bodies_[bodyIndex]->springs.size(); i++){
+        Spring* s = bodies_[bodyIndex]->springs[i];
+        if(s->p1 == -1 || s->p2 == -1) continue;
+        Vector3d p1 = qGuess.segment<3>(3 * s->p1);
+        Vector3d p2 = qGuess.segment<3>(3 * s->p2);       
+
+        toRet[i] = (p1 - p2).squaredNorm() - body->springs[i]->length;
+    }
+    return toRet;
+}
+
+VectorXd BirdsCore::computeConstraintDerivIndex(int bodyIndex, const VectorXd& qGuess, int index) const {
+    Spring* r = bodies_[bodyIndex]->springs[index];
+    Vector3d p2 = qGuess.segment<3>(3 * r->p2);        
+    Vector3d p1 = qGuess.segment<3>(3 * r->p1);
+    //Returning 2n x 1 col Vector
+    return (2 * (p1-p2).transpose() * (computeSelectionMat(bodies_[bodyIndex]->voronois.size(), r->p1) - computeSelectionMat(bodies_[bodyIndex]->voronois.size(), r->p2))).transpose();
+}
+
+MatrixXd BirdsCore::computeConstraintDeriv(int bodyIndex, const VectorXd& qGuess) const { 
+    std::shared_ptr<RigidBodyInstance> body = bodies_[bodyIndex];
+    int n = body->voronois.size();
+    MatrixXd toRet(3 * n, bodies_[bodyIndex]->springs.size());
+    for (int i = 0; i < body->springs.size(); i++) {
+        if(body->springs[i]->p1 == -1 || body->springs[i]->p2 == -1) continue;
+        toRet.block(0, i, 3 * n, 1) = computeConstraintDerivIndex(bodyIndex, qGuess, i);
+    }
+    return toRet;
+}
+
+//Returning the 2n x 1 vector 
+VectorXd BirdsCore::computeLagrangianMultiplier(int bodyIndex, const VectorXd& q, const VectorXd& v, const MatrixXd& F, const SparseMatrix<double>& Minv, VectorXd& lambda) {
+    int iter = 0;
+    lambda = VectorXd::Zero(bodies_[bodyIndex]->springs.size());
+    while (lagrangianFNewton(bodyIndex, q, v, F, lambda, Minv).squaredNorm() > (params_->NewtonTolerance*params_->NewtonTolerance) && iter < params_->NewtonMaxIters){
+        SparseMatrix<double> df = lagrangiandFNewton(bodyIndex, q, v, F, lambda, Minv);
+        Eigen::SparseQR<SparseMatrix<double>, COLAMDOrdering<int>> solver(df);
+
+        solver.analyzePattern(df);
+        solver.factorize(df);
+        
+        lambda += solver.solve(-lagrangianFNewton(bodyIndex, q, v, F, lambda, Minv));
+        iter++;
+    }
+
+    return lambda;
+}
+//returning m x 1 vector
+VectorXd BirdsCore::lagrangianFNewton(int bodyIndex, const VectorXd& q, const VectorXd& v,  const MatrixXd& F, const VectorXd& lambda, const SparseMatrix<double>& Minv) const{
+    VectorXd qIn = q;
+    qIn += params_->timeStep * v;
+    qIn += params_->timeStep * params_->timeStep * Minv * F;
+    qIn += params_->timeStep * params_->timeStep * Minv * computeConstraintDeriv(bodyIndex, q) * lambda;
+    return computeConstraint(bodyIndex, qIn);
+}
+//returning m x m vector
+SparseMatrix<double> BirdsCore::lagrangiandFNewton(int bodyIndex, const VectorXd& q, const VectorXd& v,  const MatrixXd& F, const VectorXd& lambda, const SparseMatrix<double>& Minv) const{
+    VectorXd qIn = q;
+    double h = params_->timeStep;
+    qIn += h * v;
+    qIn += h * h * Minv * F;
+    qIn += h * h * Minv * computeConstraintDeriv(bodyIndex, q) * lambda;
+    return (computeConstraintDeriv(bodyIndex, qIn).transpose() * h * h * Minv * computeConstraintDeriv(bodyIndex, q)).sparseView();
+}
+
+void BirdsCore::initializeLagrangian(){
+    for(int i = 0; i < bodies_.size(); i++){
+        for(int j = 0; j < bodies_[i]->voronois.size(); j++){
+            VoronoiPoint* vp = &bodies_[i]->voronois[j];
+            vp->remapVerts(bodies_[i]->getTemplate().getVerts());
+            vp->falseStep.c = bodies_[i]->c + VectorMath::rotationMatrix(bodies_[i]->theta) * vp->center;
+            vp->falseStep.v = bodies_[i]->cvel + params_->timeStep* vp->Fc/bodies_[i]->density/vp->getVolume();
+        }
+    }
+}
+
 bool BirdsCore::simulateOneStep()
 {
     time_ += params_->timeStep;
     int nbodies = (int)bodies_.size();
+    bool lagrangianEnabled = params_->lagrangianFracture;
 
     std::vector<Vector3d> oldthetas;
     for(int bodyidx=0; bodyidx < (int)bodies_.size(); bodyidx++)
@@ -310,11 +434,18 @@ bool BirdsCore::simulateOneStep()
 
     Eigen::VectorXd cForce(3 * nbodies);
     Eigen::VectorXd thetaForce(3 * nbodies);
+    cForce = VectorXd::Zero(3 * nbodies);
+    thetaForce = VectorXd::Zero(3 * nbodies);
 
     computePenaltyCollisionForces(collisions, cForce, thetaForce);
     applyCollisionImpulses(collisions);
 
-    breakVoronois(cForce, thetaForce);
+    if(!lagrangianEnabled)
+        breakVoronois(cForce, thetaForce);
+    else {
+        initializeLagrangian();
+    }
+    
 
     computeForces(cForce, thetaForce);
 
@@ -339,6 +470,7 @@ bool BirdsCore::simulateOneStep()
             oldthetas[bodyidx] = oldtheta;
         }
     }
+    
     
 
     for(int bodyidx=0; bodyidx < (int)bodies_.size(); bodyidx++)
@@ -368,6 +500,9 @@ bool BirdsCore::simulateOneStep()
         // std::cout << "Converged in " << iter << " Newton iterations" << std::endl;
         body.w = newwguess;
     }
+
+    if(lagrangianEnabled)
+        breakVoronois(cForce, thetaForce, true);
 
     return false;
 }

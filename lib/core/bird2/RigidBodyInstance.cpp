@@ -71,7 +71,7 @@ void RigidBodyInstance::generateSprings() {
                 makeFaces(T2.row(t2), faces);
                 for(set<int> f : faces){
                     if(tetSet1.find(f) != tetSet1.end()) {
-                        springs.push_back(new Spring(i, j));
+                        springs.push_back(new Spring(i, j, (voronois[i].center - voronois[j].center).squaredNorm()));
                         voronois[i].springs.push_back(springs.back());
                         voronois[j].springs.push_back(springs.back());
                         connected = true;

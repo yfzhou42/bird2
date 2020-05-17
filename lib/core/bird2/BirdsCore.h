@@ -93,8 +93,18 @@ private:
     void computeForces(Eigen::VectorXd& Fc, Eigen::VectorXd& Ftheta);
     void shatter(int bodyIndex, std::set<int> brokenVoronoi);
     std::set<int> toShatter(int index);
-    void breakVoronois(Eigen::VectorXd& Fc, Eigen::VectorXd& Ftheta);
+    void breakVoronois(Eigen::VectorXd& Fc, Eigen::VectorXd& Ftheta, bool Lagrangian = false);
     void makeNewBodiesFromPoints(std::vector<VoronoiPoint>& newBodies, int bodyIndex);
+    
+    std::set<int> toShatterLagrangian(int index);
+    Eigen::VectorXd computeLagrangianMultiplier(int bodyIndex, const Eigen::VectorXd& q, const Eigen::VectorXd& v, const Eigen::MatrixXd& F, const Eigen::SparseMatrix<double>& Minv, Eigen::VectorXd& lambda);
+    Eigen::VectorXd lagrangianFNewton(int bodyIndex, const Eigen::VectorXd& q, const Eigen::VectorXd& v,  const Eigen::MatrixXd& F, const Eigen::VectorXd& lambda, const Eigen::SparseMatrix<double>& Minv) const;
+    Eigen::SparseMatrix<double> lagrangiandFNewton(int bodyIndex, const Eigen::VectorXd& q, const Eigen::VectorXd& v,  const Eigen::MatrixXd& F, const Eigen::VectorXd& lambda, const Eigen::SparseMatrix<double>& Minv) const;
+    Eigen::VectorXd computeConstraint(int bodyIndex, const Eigen::VectorXd& qGuess) const;
+    Eigen::VectorXd computeConstraintDerivIndex(int bodyIndex, const Eigen::VectorXd& qGuess, int index) const;
+    Eigen::MatrixXd computeConstraintDeriv(int bodyIndex, const Eigen::VectorXd& qGuess) const;
+    void initializeLagrangian();
+    
 
     double time_;
     std::shared_ptr<SimParameters> params_;

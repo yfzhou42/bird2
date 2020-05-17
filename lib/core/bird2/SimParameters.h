@@ -22,6 +22,8 @@ struct SimParameters
         springStiffness = 0.5;
         maxGeneration = 1;
         generationMultiplier = 1.0;
+        lagrangianFracture = true;
+        lagrangianMax = 1.0;
     }
 
     float timeStep;
@@ -40,6 +42,8 @@ struct SimParameters
     float springStiffness;
     int maxGeneration;
     float generationMultiplier;
+    bool lagrangianFracture;
+    float lagrangianMax;
 };
 
 }
