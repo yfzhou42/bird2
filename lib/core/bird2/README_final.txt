@@ -17,3 +17,5 @@ The "Max Fracture Iteration" simulates how many generations a body can possibly 
 infinitely small subdivisions.
 The "Max Strain Multiplier" expoenntially increases the hardness of breaking a rigid body after each generation
 of shattering. 
+
+The shattering effect is optimized with "Impulses" disabled. 
